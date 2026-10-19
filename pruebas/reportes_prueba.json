@@ -1,0 +1,150 @@
+[
+  {
+    "id_prueba": "REPORTE-PRUEBA-001",
+    "nombre_caso": "Reporte completo de gusano cogollero",
+    "resultado_esperado": "reporte_agricola",
+    "productor_id_externo": "PROD-DEMO-001",
+    "parcela_id_externo": "PARC-DEMO-001",
+    "canal": "telegram",
+    "tipo_contenido": "texto",
+    "mensaje": "Mi parcela de maíz tiene plantas con hojas perforadas y excremento dentro del cogollo. El problema afecta aproximadamente una hectárea y comenzó hace dos días.",
+    "ubicacion": {
+      "latitud": null,
+      "longitud": null
+    },
+    "fecha_relativa": "inicio_prueba",
+    "datos_esperados": {
+      "es_reporte_agricola": true,
+      "cultivo": "maíz",
+      "sintomas": [
+        "hojas perforadas",
+        "excremento dentro del cogollo"
+      ],
+      "posible_plaga": "gusano cogollero",
+      "superficie_afectada_hectareas": 1.0,
+      "requiere_pregunta": false
+    }
+  },
+  {
+    "id_prueba": "REPORTE-PRUEBA-002",
+    "nombre_caso": "Reporte agrícola incompleto",
+    "resultado_esperado": "solicitar_informacion",
+    "productor_id_externo": "PROD-DEMO-002",
+    "parcela_id_externo": "PARC-DEMO-002",
+    "canal": "telegram",
+    "tipo_contenido": "texto",
+    "mensaje": "Mis plantas de tomate están presentando manchas y algunas hojas se están secando.",
+    "ubicacion": {
+      "latitud": null,
+      "longitud": null
+    },
+    "fecha_relativa": "inicio_prueba_mas_10_minutos",
+    "datos_esperados": {
+      "es_reporte_agricola": true,
+      "cultivo": "tomate",
+      "sintomas": [
+        "manchas",
+        "hojas secas"
+      ],
+      "posible_plaga": null,
+      "superficie_afectada_hectareas": null,
+      "requiere_pregunta": true,
+      "pregunta_sugerida": "¿Qué parte de la planta presenta las manchas y cuánto terreno está afectado?"
+    }
+  },
+  {
+    "id_prueba": "REPORTE-PRUEBA-003",
+    "nombre_caso": "Reporte con nombre local de plaga",
+    "resultado_esperado": "reporte_agricola_con_nombre_local",
+    "productor_id_externo": "PROD-DEMO-003",
+    "parcela_id_externo": "PARC-DEMO-003",
+    "canal": "telegram",
+    "tipo_contenido": "texto",
+    "mensaje": "En los aguacates apareció una arañita que deja puntos amarillos en las hojas. En la comunidad le dicen araña cristalina. Está presente en unos veinte árboles.",
+    "ubicacion": {
+      "latitud": null,
+      "longitud": null
+    },
+    "fecha_relativa": "inicio_prueba_mas_20_minutos",
+    "datos_esperados": {
+      "es_reporte_agricola": true,
+      "cultivo": "aguacate",
+      "sintomas": [
+        "puntos amarillos en las hojas"
+      ],
+      "posible_plaga": "ácaro",
+      "nombre_local_plaga": "araña cristalina",
+      "requiere_pregunta": false
+    }
+  },
+  {
+    "id_prueba": "REPORTE-PRUEBA-004",
+    "nombre_caso": "Mensaje que no es un reporte agrícola",
+    "resultado_esperado": "no_es_reporte_agricola",
+    "productor_id_externo": "PROD-DEMO-001",
+    "parcela_id_externo": null,
+    "canal": "telegram",
+    "tipo_contenido": "texto",
+    "mensaje": "Buenos días, ¿cuál es el horario de atención de la oficina?",
+    "ubicacion": {
+      "latitud": null,
+      "longitud": null
+    },
+    "fecha_relativa": "inicio_prueba_mas_30_minutos",
+    "datos_esperados": {
+      "es_reporte_agricola": false,
+      "requiere_canalizacion": true,
+      "crear_caso": false
+    }
+  },
+  {
+    "id_prueba": "REPORTE-PRUEBA-005",
+    "nombre_caso": "Posible duplicado del primer reporte",
+    "resultado_esperado": "sumar_a_caso_abierto",
+    "productor_id_externo": "PROD-DEMO-001",
+    "parcela_id_externo": "PARC-DEMO-001",
+    "canal": "telegram",
+    "tipo_contenido": "texto",
+    "mensaje": "El daño del cogollo que reporté continúa y ahora observo más plantas de maíz afectadas.",
+    "ubicacion": {
+      "latitud": null,
+      "longitud": null
+    },
+    "fecha_relativa": "inicio_prueba_mas_2_horas",
+    "datos_esperados": {
+      "es_reporte_agricola": true,
+      "cultivo": "maíz",
+      "posible_plaga": "gusano cogollero",
+      "es_posible_duplicado": true,
+      "crear_caso_nuevo": false,
+      "sumar_al_caso_abierto": "REPORTE-PRUEBA-001"
+    }
+  },
+  {
+    "id_prueba": "REPORTE-PRUEBA-006",
+    "nombre_caso": "Reporte para posible brote",
+    "resultado_esperado": "evaluar_posible_brote",
+    "productor_id_externo": "PROD-DEMO-002",
+    "parcela_id_externo": "PARC-DEMO-002",
+    "canal": "telegram",
+    "tipo_contenido": "mixto",
+    "mensaje": "También encontramos varias plantas con daño en el cogollo y pequeños gusanos dentro. Adjunto una fotografía.",
+    "archivo_ficticio": "fotografia_cogollo_demo.jpg",
+    "ubicacion": {
+      "latitud": null,
+      "longitud": null
+    },
+    "fecha_relativa": "inicio_prueba_mas_3_horas",
+    "datos_esperados": {
+      "es_reporte_agricola": true,
+      "cultivo": null,
+      "sintomas": [
+        "daño en el cogollo",
+        "gusanos dentro del cogollo"
+      ],
+      "posible_plaga": "gusano cogollero",
+      "requiere_pregunta": true,
+      "evaluar_posible_brote": true
+    }
+  }
+]
