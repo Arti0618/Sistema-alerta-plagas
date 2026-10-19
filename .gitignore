@@ -1,0 +1,37 @@
+# Variables de entorno y secretos
+.env
+.env.*
+!.env.example
+
+# Llaves y credenciales
+*.key
+*.pem
+secrets/
+credenciales/
+
+# MATLAB
+*.asv
+*.autosave
+slprj/
+codegen/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node.js
+node_modules/
+dist/
+build/
+
+# Archivos temporales
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+
+# Configuración de editores
+.vscode/
+.idea/
