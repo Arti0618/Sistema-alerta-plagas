@@ -1,3 +1,5 @@
+"""Bot de Telegram para recibir reportes agrícolas."""
+
 import logging
 import os
 from pathlib import Path
@@ -27,7 +29,7 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 async def iniciar(
@@ -35,6 +37,8 @@ async def iniciar(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     """Responde al comando /start."""
+
+    del context
 
     if update.message is None:
         return
@@ -59,6 +63,8 @@ async def recibir_texto(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     """Recibe y muestra un mensaje de texto."""
+
+    del context
 
     if update.message is None or update.message.text is None:
         return
@@ -99,6 +105,8 @@ async def comando_ayuda(
 ) -> None:
     """Muestra instrucciones básicas."""
 
+    del context
+
     if update.message is None:
         return
 
@@ -119,14 +127,16 @@ async def manejar_error(
 ) -> None:
     """Registra errores sin mostrar credenciales."""
 
-    logger.error(
+    del update
+
+    LOGGER.error(
         "Ocurrió un error al procesar una actualización.",
         exc_info=context.error,
     )
 
 
-def main() -> None:
-    """Configura e inicia el bot."""
+def obtener_token() -> str:
+    """Obtiene y valida el token de Telegram."""
 
     token = os.getenv("TELEGRAM_BOT_TOKEN")
 
@@ -134,6 +144,14 @@ def main() -> None:
         raise RuntimeError(
             "No se encontró TELEGRAM_BOT_TOKEN en el archivo .env."
         )
+
+    return token
+
+
+def main() -> None:
+    """Configura e inicia el bot."""
+
+    token = obtener_token()
 
     aplicacion = Application.builder().token(token).build()
 
