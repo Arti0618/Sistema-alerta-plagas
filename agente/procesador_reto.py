@@ -44,11 +44,11 @@ def cargar_urgencia_por_defecto():
 
     Contrato esperado::
 
-        calcular_urgencia(*, reporte, clasificacion) -> bool
+        calcular_urgencia(*, plaga) -> bool
 
-    ``reporte`` es el diccionario original de la API y ``clasificacion``
-    contiene únicamente ``es_plaga`` y ``plaga_id``. El resultado debe ser
-    un booleano que se enviará en el campo ``urgente``.
+    ``plaga`` es el registro completo del catálogo, incluidos
+    ``severidad`` y ``cuarentenaria``. El resultado debe ser un booleano
+    que se enviará en el campo ``urgente``.
     """
 
     try:
@@ -71,6 +71,26 @@ def _validar_urgente(urgente):
         raise ErrorUrgencia(
             "La regla de urgencia debe devolver un booleano."
         )
+
+
+def _buscar_plaga(catalogo, plaga_id):
+    clave = str(plaga_id)
+    for plaga in catalogo:
+        if isinstance(plaga, dict) and str(plaga.get("id")) == clave:
+            return plaga
+    return None
+
+
+def _plaga_desconocida():
+    return {
+        "id": "desconocida",
+        "nombre": "",
+        "nombres_locales": [],
+        "cultivos": [],
+        "sintomas": [],
+        "severidad": None,
+        "cuarentenaria": False,
+    }
 
 
 def construir_caso(reporte, clasificacion, urgente):
@@ -188,10 +208,19 @@ class ProcesadorReportes:
                 continue
 
             try:
-                urgente = self.calcular_urgencia(
-                    reporte=normalizado["original"],
-                    clasificacion=clasificacion,
+                plaga = _buscar_plaga(
+                    catalogo,
+                    clasificacion["plaga_id"],
                 )
+                if plaga is None:
+                    if clasificacion["plaga_id"] == "desconocida":
+                        plaga = _plaga_desconocida()
+                    else:
+                        raise ErrorUrgencia(
+                            "El plaga_id no existe en el catálogo."
+                        )
+
+                urgente = self.calcular_urgencia(plaga=plaga)
                 _validar_urgente(urgente)
                 caso = construir_caso(
                     normalizado,

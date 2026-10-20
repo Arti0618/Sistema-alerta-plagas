@@ -18,8 +18,24 @@ from pruebas.ayudas_simuladas import (
 
 
 CATALOGO = [
-    {"id": "plaga-1", "nombre": "Gusano cogollero"},
-    {"id": "plaga-2", "nombre": "Pulgón"},
+    {
+        "id": "plaga-1",
+        "nombre": "Gusano cogollero",
+        "nombres_locales": ["gusano del cogollo"],
+        "cultivos": ["maíz"],
+        "sintomas": ["hojas perforadas"],
+        "severidad": "alta",
+        "cuarentenaria": True,
+    },
+    {
+        "id": "plaga-2",
+        "nombre": "Pulgón",
+        "nombres_locales": ["piojo"],
+        "cultivos": ["trigo"],
+        "sintomas": ["hojas amarillas"],
+        "severidad": "media",
+        "cuarentenaria": False,
+    },
 ]
 
 
@@ -161,6 +177,31 @@ class ClasificadorOpenRouterTests(unittest.TestCase):
             contenido,
         )
         self.assertNotIn(CLAVE_FICTICIA, contenido)
+
+    def test_prompt_usa_metadatos_del_catalogo_y_no_urgencia(self):
+        http = ClienteHttpFalso(
+            respuesta_post=_respuesta_con(
+                '{"es_plaga": true, "plaga_id": "plaga-1"}'
+            )
+        )
+        clasificador = ClasificadorOpenRouter(
+            configuracion_openrouter(),
+            cliente_http=http,
+        )
+
+        clasificador.clasificar("Hojas perforadas.", CATALOGO)
+
+        mensajes = http.llamadas[0]["json"]["messages"]
+        contenido_catalogo = mensajes[1]["content"]
+        self.assertIn("nombres_locales", contenido_catalogo)
+        self.assertIn("cultivos", contenido_catalogo)
+        self.assertIn("sintomas", contenido_catalogo)
+        self.assertIn("gusano del cogollo", contenido_catalogo)
+        self.assertIn("maíz", contenido_catalogo)
+        self.assertIn("hojas perforadas", contenido_catalogo)
+        self.assertNotIn("severidad", contenido_catalogo)
+        self.assertNotIn("cuarentenaria", contenido_catalogo)
+        self.assertIn("No determines urgencia", mensajes[0]["content"])
 
     def test_respuesta_con_campos_extra_es_rechazada(self):
         http = ClienteHttpFalso(

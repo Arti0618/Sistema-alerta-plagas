@@ -54,7 +54,15 @@ class FlujoIntegradoSimuladoTests(unittest.TestCase):
                 "https://api.reto.test/base/plagas": RespuestaFalsa(
                     datos={
                         "plagas": [
-                            {"id": "plaga-1", "nombre": "Gusano"}
+                            {
+                                "id": "plaga-1",
+                                "nombre": "Gusano",
+                                "nombres_locales": ["gusano del cogollo"],
+                                "cultivos": ["maíz"],
+                                "sintomas": ["hojas perforadas"],
+                                "severidad": "alta",
+                                "cuarentenaria": True,
+                            }
                         ]
                     }
                 ),
@@ -97,6 +105,12 @@ class FlujoIntegradoSimuladoTests(unittest.TestCase):
             },
         )
 
+        urgencias = []
+
+        def calcular_urgencia(**argumentos):
+            urgencias.append(argumentos)
+            return True
+
         with tempfile.TemporaryDirectory() as directorio:
             procesador = ProcesadorReportes(
                 cliente=ClienteApiReto(
@@ -111,7 +125,7 @@ class FlujoIntegradoSimuladoTests(unittest.TestCase):
                 almacen=AlmacenReportes(
                     Path(directorio) / "estado.json"
                 ),
-                calcular_urgencia=lambda **argumentos: True,
+                calcular_urgencia=calcular_urgencia,
             )
             resumen = procesador.procesar("2026-10-20T00:00:00Z")
 
@@ -119,6 +133,22 @@ class FlujoIntegradoSimuladoTests(unittest.TestCase):
         self.assertEqual(resumen.validados, 1)
         self.assertEqual(resumen.casos_simulados, 1)
         self.assertEqual(resumen.casos_creados, 0)
+        self.assertEqual(
+            urgencias,
+            [
+                {
+                    "plaga": {
+                        "id": "plaga-1",
+                        "nombre": "Gusano",
+                        "nombres_locales": ["gusano del cogollo"],
+                        "cultivos": ["maíz"],
+                        "sintomas": ["hojas perforadas"],
+                        "severidad": "alta",
+                        "cuarentenaria": True,
+                    }
+                }
+            ],
+        )
 
         urls_api = [llamada["url"] for llamada in api_http.llamadas]
         self.assertIn(

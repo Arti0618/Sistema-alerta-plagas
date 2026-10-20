@@ -63,10 +63,80 @@ class ClienteApiRetoTests(unittest.TestCase):
         self.assertEqual(
             catalogo,
             [
-                {"id": "plaga-1", "nombre": "Gusano"},
-                {"id": 2, "nombre": "Pulgón"},
+                {
+                    "id": "plaga-1",
+                    "nombre": "Gusano",
+                    "nombres_locales": [],
+                    "cultivos": [],
+                    "sintomas": [],
+                    "severidad": None,
+                    "cuarentenaria": False,
+                },
+                {
+                    "id": 2,
+                    "nombre": "Pulgón",
+                    "nombres_locales": [],
+                    "cultivos": [],
+                    "sintomas": [],
+                    "severidad": None,
+                    "cuarentenaria": False,
+                },
             ],
         )
+
+    def test_catalogo_conserva_diez_registros_y_metadatos(self):
+        elementos = [
+            {
+                "id": f"plaga-{indice}",
+                "nombre": f"Nombre {indice}",
+                "nombres_locales": [f"local {indice}"],
+                "cultivos": ["maíz"],
+                "sintomas": ["manchas"],
+                "severidad": "alta",
+                "cuarentenaria": indice % 2 == 0,
+            }
+            for indice in range(10)
+        ]
+
+        catalogo = normalizar_catalogo_plagas({"plagas": elementos})
+
+        self.assertEqual(len(catalogo), 10)
+        self.assertEqual(
+            catalogo[0],
+            {
+                "id": "plaga-0",
+                "nombre": "Nombre 0",
+                "nombres_locales": ["local 0"],
+                "cultivos": ["maíz"],
+                "sintomas": ["manchas"],
+                "severidad": "alta",
+                "cuarentenaria": True,
+            },
+        )
+        self.assertEqual(
+            {plaga["id"] for plaga in catalogo},
+            {f"plaga-{indice}" for indice in range(10)},
+        )
+
+    def test_catalogo_normaliza_listas_y_booleanos(self):
+        catalogo = normalizar_catalogo_plagas(
+            [
+                {
+                    "id": "plaga-1",
+                    "nombres_locales": "  nombre local  ",
+                    "cultivos": ["maíz", "", 3],
+                    "sintomas": None,
+                    "severidad": "  media  ",
+                    "cuarentenaria": "true",
+                }
+            ]
+        )
+
+        self.assertEqual(catalogo[0]["nombres_locales"], ["nombre local"])
+        self.assertEqual(catalogo[0]["cultivos"], ["maíz", "3"])
+        self.assertEqual(catalogo[0]["sintomas"], [])
+        self.assertEqual(catalogo[0]["severidad"], "media")
+        self.assertIs(catalogo[0]["cuarentenaria"], True)
 
     def test_catalogo_rechaza_ids_duplicados(self):
         with self.assertRaises(ErrorApiReto):

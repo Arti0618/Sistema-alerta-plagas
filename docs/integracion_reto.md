@@ -28,6 +28,23 @@ envío de casos está bloqueado por defecto.
 No se utilizan endpoints `/admin`. Las rutas están limitadas por una lista
 blanca en `agente/cliente_api_reto.py`.
 
+## Catálogo
+
+`GET /plagas` se normaliza conservando estos campos por plaga:
+
+- `id`
+- `nombre`
+- `nombres_locales`
+- `cultivos`
+- `sintomas`
+- `severidad`
+- `cuarentenaria`
+
+`agente/clasificador_openrouter.py` usa únicamente `id`, `nombre`,
+`nombres_locales`, `cultivos` y `sintomas` para clasificar. No recibe ni
+decide `severidad` ni `cuarentenaria`; esos campos quedan reservados para
+la regla de urgencia.
+
 ## Clasificación
 
 `agente/clasificador_openrouter.py` envía el reporte como dato no confiable
@@ -68,14 +85,15 @@ este flujo.
 El segundo integrante debe entregar `reglas/urgencia.py` con:
 
 ```python
-def calcular_urgencia(*, reporte, clasificacion):
+def calcular_urgencia(*, plaga):
     ...
 ```
 
-`reporte` es el diccionario original de la API y `clasificacion` contiene
-solo `es_plaga` y `plaga_id`. El valor devuelto debe ser un booleano y se
-envía en el campo `urgente`. Si el archivo no existe, el procesador falla
-antes de llamar a la API.
+`plaga` es el registro completo del catálogo, incluidos `severidad` y
+`cuarentenaria`. El procesador busca el `plaga_id` clasificado en el
+catálogo y pasa ese registro completo a la regla. El valor devuelto debe
+ser un booleano y se envía en el campo `urgente`. Si el archivo no existe,
+el procesador falla antes de llamar a la API.
 
 ## Duplicados
 

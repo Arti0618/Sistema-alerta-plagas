@@ -76,12 +76,61 @@ def _normalizar_nombre(valor):
     return ""
 
 
-def normalizar_catalogo_plagas(datos):
-    """Devuelve una lista de plagas con ``id`` y ``nombre``.
+def _normalizar_lista_textos(valor):
+    if valor is None:
+        return []
+    if isinstance(valor, str):
+        valor = valor.strip()
+        return [valor] if valor else []
+    if isinstance(valor, (list, tuple)):
+        textos = []
+        for elemento in valor:
+            if isinstance(elemento, str):
+                texto = elemento.strip()
+            elif isinstance(elemento, (int, float)) and not isinstance(
+                elemento,
+                bool,
+            ):
+                texto = str(elemento)
+            else:
+                continue
+            if texto:
+                textos.append(texto)
+        return textos
+    return []
 
-    Se aceptan las envolturas habituales de la API (``plagas``, ``data``
-    o ``items``), pero se exige que cada plaga tenga un identificador
-    único y no vacío.
+
+def _normalizar_severidad(valor):
+    if isinstance(valor, str):
+        valor = valor.strip()
+        return valor or None
+    if isinstance(valor, (int, float)) and not isinstance(valor, bool):
+        return valor
+    return None
+
+
+def _normalizar_cuarentenaria(valor):
+    if type(valor) is bool:
+        return valor
+    if isinstance(valor, str):
+        texto = valor.strip().lower()
+        if texto in {"true", "1", "sí", "si"}:
+            return True
+        if texto in {"false", "0", "no"}:
+            return False
+    if isinstance(valor, int) and valor in (0, 1):
+        return bool(valor)
+    return False
+
+
+def normalizar_catalogo_plagas(datos):
+    """Devuelve el catálogo con todos los campos que usa el flujo.
+
+    Cada plaga conserva ``id``, ``nombre``, ``nombres_locales``,
+    ``cultivos``, ``sintomas``, ``severidad`` y ``cuarentenaria``. Se
+    aceptan las envolturas habituales de la API (``plagas``, ``data`` o
+    ``items``), pero se exige que cada plaga tenga un identificador único
+    y no vacío.
     """
 
     if isinstance(datos, dict):
@@ -123,7 +172,27 @@ def normalizar_catalogo_plagas(datos):
                 ("nombre", "nombre_comun", "descripcion"),
             )
         )
-        catalogo.append({"id": id_plaga, "nombre": nombre})
+        catalogo.append(
+            {
+                "id": id_plaga,
+                "nombre": nombre,
+                "nombres_locales": _normalizar_lista_textos(
+                    elemento.get("nombres_locales")
+                ),
+                "cultivos": _normalizar_lista_textos(
+                    elemento.get("cultivos")
+                ),
+                "sintomas": _normalizar_lista_textos(
+                    elemento.get("sintomas")
+                ),
+                "severidad": _normalizar_severidad(
+                    elemento.get("severidad")
+                ),
+                "cuarentenaria": _normalizar_cuarentenaria(
+                    elemento.get("cuarentenaria")
+                ),
+            }
+        )
 
     return catalogo
 

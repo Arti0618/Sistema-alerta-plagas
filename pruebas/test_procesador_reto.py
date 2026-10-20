@@ -18,7 +18,17 @@ from pruebas.ayudas_simuladas import (
 )
 
 
-CATALOGO = [{"id": "plaga-1", "nombre": "Gusano"}]
+CATALOGO = [
+    {
+        "id": "plaga-1",
+        "nombre": "Gusano",
+        "nombres_locales": ["gusano del cogollo"],
+        "cultivos": ["maíz"],
+        "sintomas": ["hojas perforadas"],
+        "severidad": "alta",
+        "cuarentenaria": True,
+    }
+]
 REPORTE = {
     "id": "r-1",
     "texto": "Hojas perforadas en el cultivo.",
@@ -153,11 +163,7 @@ class ProcesadorReportesTests(unittest.TestCase):
             any(llamada[0] == "crear_caso" for llamada in cliente.llamadas)
         )
         self.assertFalse(almacen.contiene("r-1"))
-        self.assertEqual(len(urgencias), 1)
-        self.assertEqual(
-            urgencias[0]["reporte"],
-            REPORTE,
-        )
+        self.assertEqual(urgencias, [{"plaga": CATALOGO[0]}])
 
     def test_reporte_sin_plaga_no_valida_ni_crea(self):
         clasificador = ClasificadorFalso(
@@ -179,6 +185,45 @@ class ProcesadorReportesTests(unittest.TestCase):
                 llamada[0] in ("validar_caso", "crear_caso")
                 for llamada in cliente.llamadas
             )
+        )
+
+    def test_plaga_desconocida_pasa_registro_completo_a_urgencia(self):
+        clasificador = ClasificadorFalso(
+            resultado={
+                "es_plaga": True,
+                "plaga_id": "desconocida",
+            }
+        )
+        procesador, cliente, _, _, urgencias = self._crear_procesador(
+            clasificador=clasificador
+        )
+
+        resumen = procesador.procesar("2026-10-20T00:00:00Z")
+
+        self.assertEqual(resumen.validados, 1)
+        self.assertEqual(len(urgencias), 1)
+        plaga = urgencias[0]["plaga"]
+        self.assertEqual(
+            set(plaga),
+            {
+                "id",
+                "nombre",
+                "nombres_locales",
+                "cultivos",
+                "sintomas",
+                "severidad",
+                "cuarentenaria",
+            },
+        )
+        self.assertEqual(plaga["id"], "desconocida")
+        self.assertIn(
+            ("validar_caso", {
+                "reporte_id": "r-1",
+                "es_plaga": True,
+                "plaga": "desconocida",
+                "urgente": True,
+            }),
+            cliente.llamadas,
         )
 
     def test_duplicado_en_mismo_lote_se_omite(self):
