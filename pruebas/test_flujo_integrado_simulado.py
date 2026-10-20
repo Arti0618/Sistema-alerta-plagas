@@ -71,8 +71,25 @@ class FlujoIntegradoSimuladoTests(unittest.TestCase):
                         "reportes": [
                             {
                                 "id": "r-1",
+                                "tipo": "texto",
                                 "texto": "Hojas perforadas.",
-                            }
+                            },
+                            {
+                                "id": "r-voz",
+                                "tipo": "voz",
+                                "texto": None,
+                                "audio_url": (
+                                    "https://media.test/audio-ficticio.ogg"
+                                ),
+                            },
+                            {
+                                "id": "r-foto-sin-texto",
+                                "tipo": "foto",
+                                "texto": None,
+                                "foto_url": (
+                                    "https://media.test/foto-ficticia.jpg"
+                                ),
+                            },
                         ]
                     }
                 ),
@@ -130,9 +147,20 @@ class FlujoIntegradoSimuladoTests(unittest.TestCase):
             resumen = procesador.procesar("2026-10-20T00:00:00Z")
 
         self.assertTrue(resumen.modo_simulacion)
+        self.assertEqual(resumen.reportes_leidos, 3)
+        self.assertEqual(resumen.pendientes_multimedia, 2)
+        self.assertEqual(resumen.errores, 0)
         self.assertEqual(resumen.validados, 1)
         self.assertEqual(resumen.casos_simulados, 1)
         self.assertEqual(resumen.casos_creados, 0)
+        self.assertEqual(len(openrouter_http.llamadas), 1)
+        self.assertEqual(
+            [
+                reporte["id"]
+                for reporte in procesador.pendientes_multimedia
+            ],
+            ["r-voz", "r-foto-sin-texto"],
+        )
         self.assertEqual(
             urgencias,
             [
@@ -188,6 +216,8 @@ class FlujoIntegradoSimuladoTests(unittest.TestCase):
         )
         self.assertIn("Hojas perforadas.", contenido)
         self.assertNotIn(CLAVE_FICTICIA, contenido)
+        self.assertNotIn("audio-ficticio", contenido)
+        self.assertNotIn("foto-ficticia", contenido)
 
 
 if __name__ == "__main__":

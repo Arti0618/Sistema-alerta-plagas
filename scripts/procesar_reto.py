@@ -74,6 +74,10 @@ def _crear_parser():
 def _imprimir_resumen(resumen):
     print(f"Modo simulación: {'sí' if resumen.modo_simulacion else 'no'}")
     print(f"Reportes leídos: {resumen.reportes_leidos}")
+    print(
+        "Reportes multimedia pendientes: "
+        f"{resumen.pendientes_multimedia}"
+    )
     print(f"Duplicados omitidos: {resumen.duplicados}")
     print(f"Reportes sin plaga: {resumen.sin_plaga}")
     print(f"Casos validados: {resumen.validados}")

@@ -33,6 +33,43 @@ REPORTE = {
     "id": "r-1",
     "texto": "Hojas perforadas en el cultivo.",
 }
+REPORTE_TEXTO = {
+    "id": "r-texto",
+    "tipo": "texto",
+    "texto": "Hojas perforadas en el cultivo.",
+    "productor_id": "productor-ficticio",
+    "parcela_id": "parcela-ficticia",
+    "lat": 1.0,
+    "lon": 2.0,
+}
+REPORTE_FOTO_CON_TEXTO = {
+    "id": "r-foto-con-texto",
+    "tipo": "foto",
+    "texto": "Pie de foto ficticio.",
+    "foto_url": "https://media.test/foto-ficticia.jpg",
+    "productor_id": "productor-ficticio",
+    "lat": 1.0,
+    "lon": 2.0,
+}
+REPORTE_FOTO_SIN_TEXTO = {
+    "id": "r-foto-sin-texto",
+    "tipo": "foto",
+    "texto": None,
+    "foto_url": "https://media.test/foto-ficticia.jpg",
+    "productor_id": "productor-ficticio",
+    "lat": 1.0,
+    "lon": 2.0,
+}
+REPORTE_VOZ = {
+    "id": "r-voz",
+    "tipo": "voz",
+    "texto": None,
+    "audio_url": "https://media.test/audio-ficticio.ogg",
+    "duracion_s": 4.2,
+    "productor_id": "productor-ficticio",
+    "lat": 1.0,
+    "lon": 2.0,
+}
 
 
 class ProcesadorReportesTests(unittest.TestCase):
@@ -164,6 +201,104 @@ class ProcesadorReportesTests(unittest.TestCase):
         )
         self.assertFalse(almacen.contiene("r-1"))
         self.assertEqual(urgencias, [{"plaga": CATALOGO[0]}])
+
+    def test_procesa_texto_y_foto_con_pie_de_foto(self):
+        reportes = [
+            dict(REPORTE_TEXTO),
+            dict(REPORTE_FOTO_CON_TEXTO),
+        ]
+        procesador, cliente, clasificador, _, _ = (
+            self._crear_procesador(reportes=reportes)
+        )
+
+        resumen = procesador.procesar("2026-10-20T00:00:00Z")
+
+        self.assertEqual(resumen.reportes_leidos, 2)
+        self.assertEqual(resumen.pendientes_multimedia, 0)
+        self.assertEqual(resumen.errores, 0)
+        self.assertEqual(resumen.validados, 2)
+        self.assertEqual(resumen.casos_simulados, 2)
+        self.assertEqual(len(clasificador.llamadas), 2)
+        self.assertEqual(procesador.pendientes_multimedia, [])
+        self.assertEqual(
+            sum(
+                1
+                for llamada in cliente.llamadas
+                if llamada[0] == "validar_caso"
+            ),
+            2,
+        )
+
+    def test_voz_y_foto_sin_texto_son_pendientes(self):
+        reportes = [
+            dict(REPORTE_VOZ),
+            dict(REPORTE_FOTO_SIN_TEXTO),
+        ]
+        procesador, cliente, clasificador, almacen, urgencias = (
+            self._crear_procesador(reportes=reportes)
+        )
+
+        resumen = procesador.procesar("2026-10-20T00:00:00Z")
+
+        self.assertEqual(resumen.reportes_leidos, 2)
+        self.assertEqual(resumen.pendientes_multimedia, 2)
+        self.assertEqual(resumen.errores, 0)
+        self.assertEqual(resumen.validados, 0)
+        self.assertEqual(resumen.casos_simulados, 0)
+        self.assertEqual(clasificador.llamadas, [])
+        self.assertEqual(urgencias, [])
+        self.assertEqual(procesador.pendientes_multimedia, reportes)
+        self.assertIsNot(
+            procesador.pendientes_multimedia[0],
+            reportes[0],
+        )
+        self.assertFalse(almacen.contiene("r-voz"))
+        self.assertFalse(almacen.contiene("r-foto-sin-texto"))
+        self.assertFalse(
+            any(
+                llamada[0] in ("validar_caso", "crear_caso")
+                for llamada in cliente.llamadas
+            )
+        )
+
+    def test_tipo_desconocido_queda_pendiente(self):
+        reporte = {
+            "id": "r-video",
+            "tipo": "video",
+            "texto": "Contenido ficticio.",
+        }
+        procesador, cliente, clasificador, _, _ = (
+            self._crear_procesador(reportes=[reporte])
+        )
+
+        resumen = procesador.procesar("2026-10-20T00:00:00Z")
+
+        self.assertEqual(resumen.pendientes_multimedia, 1)
+        self.assertEqual(resumen.errores, 0)
+        self.assertEqual(clasificador.llamadas, [])
+        self.assertEqual(procesador.pendientes_multimedia, [reporte])
+        self.assertFalse(
+            any(llamada[0] == "validar_caso" for llamada in cliente.llamadas)
+        )
+
+    def test_texto_sin_texto_es_error(self):
+        reporte = {
+            "id": "r-texto-vacio",
+            "tipo": "texto",
+            "texto": "   ",
+        }
+        procesador, cliente, clasificador, _, _ = (
+            self._crear_procesador(reportes=[reporte])
+        )
+
+        resumen = procesador.procesar("2026-10-20T00:00:00Z")
+
+        self.assertEqual(resumen.errores, 1)
+        self.assertEqual(resumen.pendientes_multimedia, 0)
+        self.assertEqual(clasificador.llamadas, [])
+        self.assertFalse(
+            any(llamada[0] == "validar_caso" for llamada in cliente.llamadas)
+        )
 
     def test_reporte_sin_plaga_no_valida_ni_crea(self):
         clasificador = ClasificadorFalso(

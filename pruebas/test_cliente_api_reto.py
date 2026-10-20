@@ -9,6 +9,7 @@ from agente.cliente_api_reto import (
     ErrorApiReto,
     ErrorModoSeguro,
     ErrorValidacionCaso,
+    extraer_texto_reporte,
     normalizar_catalogo_plagas,
     normalizar_reporte,
 )
@@ -180,6 +181,27 @@ class ClienteApiRetoTests(unittest.TestCase):
         self.assertEqual(normalizado["id"], 7)
         self.assertEqual(normalizado["clave"], "7")
         self.assertEqual(normalizado["texto"], "Hay insectos")
+
+    def test_extraer_texto_reporte_sin_texto_devuelve_none(self):
+        self.assertIsNone(
+            extraer_texto_reporte(
+                {
+                    "id": "r-voz",
+                    "tipo": "voz",
+                    "texto": None,
+                }
+            )
+        )
+
+    def test_normalizar_reporte_sin_texto_falla(self):
+        with self.assertRaises(ErrorApiReto):
+            normalizar_reporte(
+                {
+                    "id": "r-voz",
+                    "tipo": "voz",
+                    "texto": None,
+                }
+            )
 
     def test_validar_caso_esta_permitido_en_modo_seguro(self):
         http = ClienteHttpFalso(

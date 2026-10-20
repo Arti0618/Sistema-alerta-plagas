@@ -214,6 +214,32 @@ def normalizar_reportes(datos):
     return datos
 
 
+CAMPOS_TEXTO_REPORTE = (
+    "texto",
+    "mensaje",
+    "descripcion",
+    "contenido",
+    "texto_reporte",
+)
+
+
+def extraer_texto_reporte(reporte):
+    """Devuelve el texto escalar de un reporte, o ``None`` si no existe.
+
+    No exige identificador ni tipo: permite decidir si un reporte es
+    procesable antes de descartarlo como pendiente multimedia.
+    """
+
+    if not isinstance(reporte, dict):
+        raise ErrorApiReto("La API devolvió un reporte inválido.")
+
+    for campo in CAMPOS_TEXTO_REPORTE:
+        valor = reporte.get(campo)
+        if isinstance(valor, str) and valor.strip():
+            return valor.strip()
+    return None
+
+
 def normalizar_reporte(reporte):
     """Extrae el ID y el texto de un reporte de forma tolerante.
 
@@ -230,19 +256,7 @@ def normalizar_reporte(reporte):
     if id_reporte is None:
         raise ErrorApiReto("Un reporte no tiene identificador.")
 
-    texto = None
-    for campo in (
-        "texto",
-        "mensaje",
-        "descripcion",
-        "contenido",
-        "texto_reporte",
-    ):
-        valor = reporte.get(campo)
-        if isinstance(valor, str) and valor.strip():
-            texto = valor.strip()
-            break
-
+    texto = extraer_texto_reporte(reporte)
     if texto is None:
         raise ErrorApiReto("Un reporte no tiene texto para interpretar.")
 

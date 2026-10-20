@@ -7,6 +7,7 @@ que puede producir un caso real es ``POST /casos``, protegida por
 ``ENVIAR_CASOS_REALES``.
 """
 
+from copy import deepcopy
 from dataclasses import dataclass
 
 from agente.almacen_reporte_ids import (
@@ -14,7 +15,11 @@ from agente.almacen_reporte_ids import (
     RUTA_ESTADO_POR_DEFECTO,
 )
 from agente.clasificador_openrouter import validar_clasificacion
-from agente.cliente_api_reto import ErrorApiReto, normalizar_reporte
+from agente.cliente_api_reto import (
+    ErrorApiReto,
+    extraer_texto_reporte,
+    normalizar_reporte,
+)
 
 
 class ErrorUrgencia(Exception):
@@ -31,6 +36,7 @@ class ResumenProceso:
 
     modo_simulacion: bool
     reportes_leidos: int = 0
+    pendientes_multimedia: int = 0
     duplicados: int = 0
     sin_plaga: int = 0
     validados: int = 0
@@ -71,6 +77,34 @@ def _validar_urgente(urgente):
         raise ErrorUrgencia(
             "La regla de urgencia debe devolver un booleano."
         )
+
+
+def _tipo_reporte(reporte):
+    if not isinstance(reporte, dict):
+        return None
+
+    tipo = reporte.get("tipo")
+    if isinstance(tipo, str):
+        tipo = tipo.strip().lower()
+        return tipo or None
+    return None
+
+
+def _es_pendiente_multimedia(tipo, texto):
+    """Indica si el reporte debe esperar una integración multimedia.
+
+    Se procesan los reportes de texto y las fotos con pie de foto. Las
+    notas de voz, las fotos sin texto y cualquier tipo desconocido se
+    conservan como pendientes.
+    """
+
+    if tipo == "voz":
+        return True
+    if tipo == "foto":
+        return texto is None
+    if tipo in (None, "texto"):
+        return False
+    return True
 
 
 def _buscar_plaga(catalogo, plaga_id):
@@ -163,6 +197,10 @@ class ProcesadorReportes:
                 "La dependencia de urgencia no es invocable."
             )
 
+        # Datos originales de reportes que requieren una integración
+        # multimedia futura. Nunca se imprimen ni se persisten aquí.
+        self.pendientes_multimedia = []
+
     def procesar(self, desde):
         """Procesa los reportes publicados desde ``desde``."""
 
@@ -171,10 +209,27 @@ class ProcesadorReportes:
         resumen = ResumenProceso(
             modo_simulacion=self.configuracion.modo_simulacion
         )
+        self.pendientes_multimedia = []
         vistos = set()
 
         for reporte in reportes:
             resumen.reportes_leidos += 1
+
+            try:
+                texto = extraer_texto_reporte(reporte)
+            except ErrorApiReto:
+                resumen.errores += 1
+                continue
+
+            tipo = _tipo_reporte(reporte)
+            if _es_pendiente_multimedia(tipo, texto):
+                resumen.pendientes_multimedia += 1
+                self.pendientes_multimedia.append(deepcopy(reporte))
+                continue
+
+            if texto is None:
+                resumen.errores += 1
+                continue
 
             try:
                 normalizado = normalizar_reporte(reporte)

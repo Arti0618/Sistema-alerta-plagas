@@ -29,6 +29,34 @@ envío de casos está bloqueado por defecto.
 No se utilizan endpoints `/admin`. Las rutas están limitadas por una lista
 blanca en `agente/cliente_api_reto.py`.
 
+## Reportes procesables y multimedia pendiente
+
+El flujo solo clasifica:
+
+- Reportes con `tipo="texto"` y un campo de texto no vacío.
+- Reportes con `tipo="foto"` y un pie de foto no vacío.
+
+Por compatibilidad, un reporte sin campo `tipo` pero con texto también se
+procesa como texto.
+
+Se conservan como pendientes de una integración multimedia futura:
+
+- Reportes con `tipo="voz"`.
+- Fotos sin pie de foto.
+- Cualquier otro tipo de reporte no contemplado.
+
+Los pendientes:
+
+- No se envían al clasificador.
+- No se validan ni se envían como casos.
+- No se registran en el almacén de IDs procesados.
+- No incrementan el contador de errores.
+
+El resumen expone el conteo `pendientes_multimedia`. El procesador conserva
+los diccionarios originales completos en
+`ProcesadorReportes.pendientes_multimedia` para una integración futura; esos
+datos no se imprimen ni se persisten automáticamente.
+
 ## Catálogo
 
 `GET /plagas` se normaliza conservando estos campos por plaga:
