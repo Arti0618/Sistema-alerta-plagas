@@ -93,6 +93,11 @@ El productor envía un reporte mediante Telegram.
 El agente recibe el texto, la fotografía o la nota de voz.
 Si existe una nota de voz, el sistema la convierte en texto.
 La inteligencia artificial interpreta el contenido.
+
+En la integración actual con la API solo se procesan reportes de texto y
+fotos con pie de foto. Las notas de voz, las fotos sin texto y otros tipos
+multimedia se conservan como pendientes para una integración futura; no se
+clasifican ni se marcan como procesados.
 La interpretación se almacena en Supabase.
 El motor de reglas calcula la prioridad y recomienda un técnico.
 El coordinador revisa el caso desde la aplicación web.
