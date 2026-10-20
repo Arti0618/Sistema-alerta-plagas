@@ -32,6 +32,9 @@ build/
 .DS_Store
 Thumbs.db
 
+# Estado local del flujo de reportes
+datos/reportes_procesados.json
+
 # Configuración de editores
 .vscode/
 .idea/
