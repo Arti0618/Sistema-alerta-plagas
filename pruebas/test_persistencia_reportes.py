@@ -94,6 +94,43 @@ class PruebasConstruirReporte(unittest.TestCase):
 
         self.assertEqual(datos["metadatos"], {"origen": "telegram"})
 
+    def test_la_clave_de_idempotencia_distingue_chats(self):
+        """El mismo mensaje en chats distintos no debe colisionar."""
+
+        primero = persistencia_reportes.construir_reporte_texto(
+            texto="Reporte del primer chat.",
+            telegram_message_id=5,
+            chat_id=111,
+        )
+        segundo = persistencia_reportes.construir_reporte_texto(
+            texto="Reporte del segundo chat.",
+            telegram_message_id=5,
+            chat_id=222,
+        )
+
+        self.assertEqual(
+            primero["telegram_message_id"],
+            segundo["telegram_message_id"],
+        )
+        self.assertNotEqual(
+            primero["metadatos"]["telegram_chat_id"],
+            segundo["metadatos"]["telegram_chat_id"],
+        )
+
+    def test_la_clave_de_idempotencia_es_estable_en_el_mismo_chat(self):
+        primero = persistencia_reportes.construir_reporte_texto(
+            texto="Reporte repetido por Telegram.",
+            telegram_message_id=5,
+            chat_id=111,
+        )
+        segundo = persistencia_reportes.construir_reporte_texto(
+            texto="Reporte repetido por Telegram.",
+            telegram_message_id=5,
+            chat_id=111,
+        )
+
+        self.assertEqual(primero, segundo)
+
     def test_rechaza_texto_vacio(self):
         with self.assertRaises(ValueError):
             persistencia_reportes.construir_reporte_texto(
@@ -160,6 +197,10 @@ class PruebasGuardarReporte(unittest.TestCase):
         self.assertEqual(
             llamada["json"]["telegram_message_id"],
             "10",
+        )
+        self.assertEqual(
+            llamada["json"]["metadatos"]["telegram_chat_id"],
+            str(CHAT_ID),
         )
         self.configuracion.assert_called_once_with()
 
