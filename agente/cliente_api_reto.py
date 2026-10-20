@@ -307,8 +307,7 @@ class ClienteApiReto:
     def _cabeceras(self):
         token = self.configuracion.token
         return {
-            "Authorization": f"Bearer {token}",
-            "X-Team-Token": token,
+            "X-Equipo-Token": token,
             "Accept": "application/json",
             "Content-Type": "application/json",
         }

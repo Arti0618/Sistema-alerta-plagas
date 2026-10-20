@@ -38,13 +38,11 @@ class ClienteApiRetoTests(unittest.TestCase):
             "https://api.reto.test/base/salud",
         )
         self.assertEqual(
-            llamada["headers"]["Authorization"],
-            f"Bearer {TOKEN_FICTICIO}",
-        )
-        self.assertEqual(
-            llamada["headers"]["X-Team-Token"],
+            llamada["headers"]["X-Equipo-Token"],
             TOKEN_FICTICIO,
         )
+        self.assertNotIn("Authorization", llamada["headers"])
+        self.assertNotIn("X-Team-Token", llamada["headers"])
 
     def test_listar_plagas_normaliza_catalogo(self):
         http = ClienteHttpFalso(

@@ -7,7 +7,8 @@ envío de casos está bloqueado por defecto.
 ## Variables de entorno
 
 - `API_HACKATHON`: URL base HTTPS de la API.
-- `TOKEN_EQUIPO`: token de autenticación.
+- `TOKEN_EQUIPO`: token de autenticación; se envía en el encabezado
+  `X-Equipo-Token`.
 - `API_HACKATHON_TIMEOUT_SEGUNDOS`: opcional, 15 por defecto.
 - `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`: credenciales del clasificador.
 - `OPENROUTER_URL`: opcional; por defecto usa el endpoint de chat de OpenRouter.
