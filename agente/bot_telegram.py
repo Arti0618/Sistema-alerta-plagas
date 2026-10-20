@@ -14,6 +14,11 @@ from telegram.ext import (
     filters,
 )
 
+if __package__:
+    from agente.persistencia_reportes import guardar_reporte_texto
+else:
+    from persistencia_reportes import guardar_reporte_texto
+
 
 RUTA_PROYECTO = Path(__file__).resolve().parent.parent
 RUTA_ENV = RUTA_PROYECTO / ".env"
@@ -28,6 +33,10 @@ logging.basicConfig(
     ),
     level=logging.INFO,
 )
+
+# httpx registra la URL completa de la API de Telegram, incluido el
+# token del bot. Se silencia para no filtrar credenciales en la consola.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -62,7 +71,7 @@ async def recibir_texto(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    """Recibe y muestra un mensaje de texto."""
+    """Guarda el reporte recibido y confirma al productor."""
 
     del context
 
@@ -73,23 +82,32 @@ async def recibir_texto(
     usuario = update.effective_user
     chat = update.effective_chat
 
-    print()
-    print("=" * 70)
-    print("NUEVO MENSAJE RECIBIDO")
-    print("=" * 70)
-    print(f"Chat ID: {chat.id if chat else 'No disponible'}")
-    print(f"Mensaje ID: {mensaje.message_id}")
-    print(
-        "Usuario ID: "
-        f"{usuario.id if usuario else 'No disponible'}"
-    )
-    print(f"Fecha: {mensaje.date}")
-    print(f"Texto: {mensaje.text}")
-    print("=" * 70)
-    print()
+    LOGGER.info("Mensaje de texto recibido por Telegram.")
+
+    try:
+        guardar_reporte_texto(
+            texto=mensaje.text,
+            telegram_message_id=str(mensaje.message_id),
+            chat_id=chat.id if chat else None,
+            user_id=usuario.id if usuario else None,
+            fecha=mensaje.date,
+        )
+
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        LOGGER.error(
+            "No fue posible guardar el reporte recibido por Telegram (%s).",
+            _resumen_error(error),
+        )
+
+        await mensaje.reply_text(
+            "No pudimos guardar tu reporte en este momento. "
+            "Intenta de nuevo más tarde."
+        )
+
+        return
 
     respuesta = (
-        "Tu mensaje fue recibido correctamente.\n\n"
+        "Tu reporte fue recibido y guardado correctamente.\n\n"
         "En la siguiente etapa, el sistema analizará si corresponde "
         "a un reporte agrícola y extraerá la información necesaria.\n\n"
         "Por ahora no se ha calculado una prioridad ni se ha asignado "
@@ -133,6 +151,34 @@ async def manejar_error(
         "Ocurrió un error al procesar una actualización.",
         exc_info=context.error,
     )
+
+
+def _resumen_error(error: Exception) -> str:
+    """
+    Resume un error sin incluir datos del reporte ni credenciales.
+
+    No se registra el campo details de PostgreSQL porque puede
+    contener la fila completa que se intentó guardar.
+    """
+
+    partes = [f"tipo={type(error).__name__}"]
+
+    codigo = getattr(error, "code", None)
+
+    if codigo:
+        partes.append(f"codigo={codigo}")
+
+    estado = getattr(error, "status_code", None)
+
+    if estado:
+        partes.append(f"http={estado}")
+
+    mensaje = getattr(error, "message", None)
+
+    if mensaje:
+        partes.append(f"mensaje={str(mensaje)[:200]}")
+
+    return " ".join(partes)
 
 
 def obtener_token() -> str:
