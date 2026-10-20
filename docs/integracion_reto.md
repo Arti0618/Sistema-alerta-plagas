@@ -48,14 +48,16 @@ El cuerpo construido por `agente/procesador_reto.py` es:
 ```json
 {
   "reporte_id": "identificador-del-reporte",
+  "es_plaga": true,
   "plaga": "id-exacto-o-desconocida",
-  "urgencia": "valor-entregado-por-reglas"
+  "urgente": true
 }
 ```
 
 El clasificador devuelve internamente `plaga_id`; el procesador lo
-transforma al campo `plaga` que exige la API. No se envían `plaga_id` ni
-`es_plaga` al endpoint de casos.
+transforma al campo `plaga` que exige la API. `es_plaga` y `urgente` son
+booleanos. Si `es_plaga` es falso, `plaga` siempre es `"desconocida"`.
+El cuerpo no incluye `plaga_id` ni el campo `urgencia`.
 
 Primero se llama a `POST /casos/validar`. En modo seguro no se llama a
 `POST /casos`; por tanto tampoco se disparan notificaciones reales desde
@@ -71,8 +73,9 @@ def calcular_urgencia(*, reporte, clasificacion):
 ```
 
 `reporte` es el diccionario original de la API y `clasificacion` contiene
-solo `es_plaga` y `plaga_id`. El valor devuelto debe ser serializable a
-JSON. Si el archivo no existe, el procesador falla antes de llamar a la API.
+solo `es_plaga` y `plaga_id`. El valor devuelto debe ser un booleano y se
+envía en el campo `urgente`. Si el archivo no existe, el procesador falla
+antes de llamar a la API.
 
 ## Duplicados
 

@@ -111,7 +111,7 @@ class FlujoIntegradoSimuladoTests(unittest.TestCase):
                 almacen=AlmacenReportes(
                     Path(directorio) / "estado.json"
                 ),
-                calcular_urgencia=lambda **argumentos: "alta",
+                calcular_urgencia=lambda **argumentos: True,
             )
             resumen = procesador.procesar("2026-10-20T00:00:00Z")
 
@@ -137,11 +137,19 @@ class FlujoIntegradoSimuladoTests(unittest.TestCase):
             validaciones[0]["json"],
             {
                 "reporte_id": "r-1",
+                "es_plaga": True,
                 "plaga": "plaga-1",
-                "urgencia": "alta",
+                "urgente": True,
             },
         )
+        self.assertEqual(
+            set(validaciones[0]["json"]),
+            {"reporte_id", "es_plaga", "plaga", "urgente"},
+        )
+        self.assertIs(validaciones[0]["json"]["es_plaga"], True)
+        self.assertIs(validaciones[0]["json"]["urgente"], True)
         self.assertNotIn("plaga_id", validaciones[0]["json"])
+        self.assertNotIn("urgencia", validaciones[0]["json"])
 
         peticion_ia = openrouter_http.llamadas[0]
         contenido = "\n".join(

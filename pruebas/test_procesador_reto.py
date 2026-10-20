@@ -6,7 +6,11 @@ from pathlib import Path
 
 from agente.almacen_reporte_ids import AlmacenReportes
 from agente.cliente_api_reto import ErrorApiReto
-from agente.procesador_reto import ProcesadorReportes, construir_caso
+from agente.procesador_reto import (
+    ErrorUrgencia,
+    ProcesadorReportes,
+    construir_caso,
+)
 from pruebas.ayudas_simuladas import (
     ClasificadorFalso,
     ClienteApiFalso,
@@ -52,7 +56,7 @@ class ProcesadorReportesTests(unittest.TestCase):
         if urgencia is None:
             def urgencia(**argumentos):
                 urgencias.append(argumentos)
-                return "alta"
+                return True
 
         procesador = ProcesadorReportes(
             cliente=cliente,
@@ -67,19 +71,61 @@ class ProcesadorReportesTests(unittest.TestCase):
         caso = construir_caso(
             {"id": "r-1"},
             {"es_plaga": True, "plaga_id": "plaga-1"},
-            "alta",
+            True,
         )
 
         self.assertEqual(
             caso,
             {
                 "reporte_id": "r-1",
+                "es_plaga": True,
                 "plaga": "plaga-1",
-                "urgencia": "alta",
+                "urgente": True,
             },
         )
+        self.assertEqual(
+            set(caso),
+            {"reporte_id", "es_plaga", "plaga", "urgente"},
+        )
+        self.assertIs(caso["es_plaga"], True)
+        self.assertIs(caso["urgente"], True)
         self.assertNotIn("plaga_id", caso)
-        self.assertNotIn("es_plaga", caso)
+        self.assertNotIn("urgencia", caso)
+
+    def test_construir_caso_sin_plaga_usa_desconocida(self):
+        caso = construir_caso(
+            {"id": "r-2"},
+            {"es_plaga": False, "plaga_id": "plaga-1"},
+            False,
+        )
+
+        self.assertEqual(
+            caso,
+            {
+                "reporte_id": "r-2",
+                "es_plaga": False,
+                "plaga": "desconocida",
+                "urgente": False,
+            },
+        )
+        self.assertIs(caso["es_plaga"], False)
+        self.assertIs(caso["urgente"], False)
+
+    def test_construir_caso_rechaza_es_plaga_no_booleano(self):
+        with self.assertRaises(ValueError):
+            construir_caso(
+                {"id": "r-1"},
+                {"es_plaga": 1, "plaga_id": "plaga-1"},
+                True,
+            )
+
+    def test_construir_caso_rechaza_urgente_no_booleano(self):
+        with self.assertRaises(ErrorUrgencia):
+            construir_caso(
+                {"id": "r-1"},
+                {"es_plaga": True, "plaga_id": "plaga-1"},
+                "alta",
+            )
 
     def test_modo_seguro_valida_pero_no_crea(self):
         procesador, cliente, _, almacen, urgencias = (
@@ -97,8 +143,9 @@ class ProcesadorReportesTests(unittest.TestCase):
         self.assertIn(
             ("validar_caso", {
                 "reporte_id": "r-1",
+                "es_plaga": True,
                 "plaga": "plaga-1",
-                "urgencia": "alta",
+                "urgente": True,
             }),
             cliente.llamadas,
         )
@@ -181,8 +228,20 @@ class ProcesadorReportesTests(unittest.TestCase):
         self.assertEqual(resumen.casos_creados, 1)
         self.assertEqual(resumen.casos_simulados, 0)
         self.assertTrue(almacen.contiene("r-1"))
-        self.assertTrue(
-            any(llamada[0] == "crear_caso" for llamada in cliente.llamadas)
+        creaciones = [
+            llamada
+            for llamada in cliente.llamadas
+            if llamada[0] == "crear_caso"
+        ]
+        self.assertEqual(len(creaciones), 1)
+        self.assertEqual(
+            creaciones[0][1],
+            {
+                "reporte_id": "r-1",
+                "es_plaga": True,
+                "plaga": "plaga-1",
+                "urgente": True,
+            },
         )
 
     def test_validacion_fallida_no_crea_ni_registra(self):
@@ -254,6 +313,36 @@ class ProcesadorReportesTests(unittest.TestCase):
 
         procesador, cliente, _, _, _ = self._crear_procesador(
             urgencia=urgencia_que_falla
+        )
+
+        resumen = procesador.procesar("2026-10-20T00:00:00Z")
+
+        self.assertEqual(resumen.errores, 1)
+        self.assertFalse(
+            any(llamada[0] == "validar_caso" for llamada in cliente.llamadas)
+        )
+
+    def test_urgencia_no_booleana_no_valida(self):
+        procesador, cliente, _, _, _ = self._crear_procesador(
+            urgencia=lambda **argumentos: "alta"
+        )
+
+        resumen = procesador.procesar("2026-10-20T00:00:00Z")
+
+        self.assertEqual(resumen.errores, 1)
+        self.assertFalse(
+            any(llamada[0] == "validar_caso" for llamada in cliente.llamadas)
+        )
+
+    def test_clasificacion_con_id_fuera_del_catalogo_no_valida(self):
+        clasificador = ClasificadorFalso(
+            resultado={
+                "es_plaga": True,
+                "plaga_id": "plaga-999",
+            }
+        )
+        procesador, cliente, _, _, _ = self._crear_procesador(
+            clasificador=clasificador
         )
 
         resumen = procesador.procesar("2026-10-20T00:00:00Z")

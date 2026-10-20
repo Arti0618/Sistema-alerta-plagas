@@ -1,12 +1,12 @@
 """Orquestación del flujo oficial de reportes.
 
 La IA solo clasifica. La urgencia se obtiene de ``reglas.urgencia`` y
-el envío real de casos está bloqueado por defecto. Este módulo no usa
-Supabase ni notificaciones propias: la única acción que puede producir
-un caso real es ``POST /casos``, protegida por ``ENVIAR_CASOS_REALES``.
+debe ser booleana. El envío real de casos está bloqueado por defecto.
+Este módulo no usa Supabase ni notificaciones propias: la única acción
+que puede producir un caso real es ``POST /casos``, protegida por
+``ENVIAR_CASOS_REALES``.
 """
 
-import json
 from dataclasses import dataclass
 
 from agente.almacen_reporte_ids import (
@@ -44,10 +44,11 @@ def cargar_urgencia_por_defecto():
 
     Contrato esperado::
 
-        calcular_urgencia(*, reporte, clasificacion) -> valor JSON
+        calcular_urgencia(*, reporte, clasificacion) -> bool
 
     ``reporte`` es el diccionario original de la API y ``clasificacion``
-    contiene únicamente ``es_plaga`` y ``plaga_id``.
+    contiene únicamente ``es_plaga`` y ``plaga_id``. El resultado debe ser
+    un booleano que se enviará en el campo ``urgente``.
     """
 
     try:
@@ -65,32 +66,49 @@ def cargar_urgencia_por_defecto():
     return calcular_urgencia
 
 
-def _validar_urgencia(urgencia):
-    if urgencia is None:
+def _validar_urgente(urgente):
+    if type(urgente) is not bool:
         raise ErrorUrgencia(
-            "La regla de urgencia no devolvió un valor."
+            "La regla de urgencia debe devolver un booleano."
         )
 
-    try:
-        json.dumps(urgencia, allow_nan=False)
-    except (TypeError, ValueError) as error:
-        raise ErrorUrgencia(
-            "La urgencia devuelta no es un valor JSON válido."
-        ) from error
 
+def construir_caso(reporte, clasificacion, urgente):
+    """Construye el cuerpo exacto para /casos/validar y /casos.
 
-def construir_caso(reporte, clasificacion, urgencia):
-    """Construye el cuerpo mínimo para /casos/validar y /casos.
-
-    El clasificador devuelve ``plaga_id``, pero la API oficial recibe ese
-    valor en el campo ``plaga``. No se envía el campo interno
-    ``es_plaga`` ni el nombre ``plaga_id``.
+    El resultado contiene únicamente ``reporte_id``, ``es_plaga``,
+    ``plaga`` y ``urgente``. El clasificador devuelve ``plaga_id``, pero
+    la API recibe ese valor en ``plaga``. Si ``es_plaga`` es falso, el
+    campo ``plaga`` siempre vale ``"desconocida"``.
     """
+
+    es_plaga = clasificacion.get("es_plaga")
+    if type(es_plaga) is not bool:
+        raise ValueError("es_plaga debe ser booleano.")
+
+    if type(urgente) is not bool:
+        raise ErrorUrgencia(
+            "El campo urgente debe ser booleano."
+        )
+
+    if es_plaga:
+        plaga = clasificacion.get("plaga_id")
+        if (
+            isinstance(plaga, bool)
+            or not isinstance(plaga, (str, int))
+            or (isinstance(plaga, str) and not plaga.strip())
+        ):
+            raise ValueError(
+                "plaga debe ser un ID del catálogo o 'desconocida'."
+            )
+    else:
+        plaga = "desconocida"
 
     return {
         "reporte_id": reporte["id"],
-        "plaga": clasificacion["plaga_id"],
-        "urgencia": urgencia,
+        "es_plaga": es_plaga,
+        "plaga": plaga,
+        "urgente": urgente,
     }
 
 
@@ -170,15 +188,15 @@ class ProcesadorReportes:
                 continue
 
             try:
-                urgencia = self.calcular_urgencia(
+                urgente = self.calcular_urgencia(
                     reporte=normalizado["original"],
                     clasificacion=clasificacion,
                 )
-                _validar_urgencia(urgencia)
+                _validar_urgente(urgente)
                 caso = construir_caso(
                     normalizado,
                     clasificacion,
-                    urgencia,
+                    urgente,
                 )
                 self.cliente.validar_caso(caso)
                 resumen.validados += 1
