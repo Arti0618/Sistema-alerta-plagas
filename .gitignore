@@ -35,3 +35,4 @@ Thumbs.db
 # Configuración de editores
 .vscode/
 .idea/
+.opencode/
