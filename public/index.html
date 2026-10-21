@@ -87,9 +87,18 @@
           <label class="capa"><input type="checkbox" id="capaRadio"> Radio de 5 km en cada caso</label>
         </div>
       </div>
+      <div class="mapa__ayuda">Rueda del mouse para acercar · arrastra para moverte · doble clic para ver todo</div>
 
       <div class="mapa__marco">
         <svg id="mapa" viewBox="0 0 1000 640" preserveAspectRatio="xMidYMid meet"></svg>
+
+        <div class="mapa__zoom">
+          <button id="zoomMas" title="Acercar">＋</button>
+          <button id="zoomMenos" title="Alejar">−</button>
+          <button id="zoomReset" title="Ver todo">⟲</button>
+        </div>
+        <div class="mapa__nivel" id="mapaNivel">100 %</div>
+
         <div class="mapa__leyenda">
           <div><span class="punto-semaforo s-rojo"></span> Rojo (24 h)</div>
           <div><span class="punto-semaforo s-naranja"></span> Naranja (48 h)</div>

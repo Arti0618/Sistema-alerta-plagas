@@ -14,6 +14,10 @@ const S = {
   detalle: null,
   vista: 'consultas',
   mapa: null,
+  // Tamaño del lienzo del mapa (unidades del SVG) y ventana visible.
+  // Si mapaVista es null, se ve todo el mapa.
+  mapaTamano: null,
+  mapaVista: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -68,6 +72,10 @@ const els = {
   capaBrotes: $('capaBrotes'),
   capaTecnicos: $('capaTecnicos'),
   capaRadio: $('capaRadio'),
+  zoomMas: $('zoomMas'),
+  zoomMenos: $('zoomMenos'),
+  zoomReset: $('zoomReset'),
+  mapaNivel: $('mapaNivel'),
 
   cajon: $('cajon'),
   cajonFondo: $('cajonFondo'),
@@ -503,6 +511,127 @@ function teselasDelMapa(proj) {
   return lista;
 }
 
+/* ---------------------- zoom y desplazamiento ---------------------- */
+
+const ZOOM_MAXIMO = 25;
+
+function vistaActual() {
+  const t = S.mapaTamano;
+  if (!t) return null;
+  return S.mapaVista || { x: 0, y: 0, w: t.ancho, h: t.alto };
+}
+
+/** Aplica la ventana visible al viewBox y actualiza el indicador de nivel. */
+function aplicarVista() {
+  const t = S.mapaTamano;
+  if (!t) return;
+
+  const v = vistaActual();
+  els.mapa.setAttribute('viewBox', `${v.x} ${v.y} ${v.w} ${v.h}`);
+
+  const nivel = Math.round((t.ancho / v.w) * 100);
+  els.mapaNivel.textContent = `${nivel} %`;
+  els.zoomReset.disabled = !S.mapaVista;
+  els.zoomMas.disabled = v.w <= t.ancho / ZOOM_MAXIMO + 0.5;
+  els.zoomMenos.disabled = !S.mapaVista;
+}
+
+/** Punto de la pantalla pasado a coordenadas del SVG. */
+function aCoordenadasSvg(clientX, clientY) {
+  const svg = els.mapa;
+  const pt = svg.createSVGPoint();
+  pt.x = clientX;
+  pt.y = clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+/**
+ * Acerca o aleja manteniendo fijo el punto que está bajo el cursor.
+ * @param {number} factor mayor que 1 acerca, menor que 1 aleja.
+ */
+function zoomEn(clientX, clientY, factor) {
+  const t = S.mapaTamano;
+  if (!t) return;
+
+  const actual = vistaActual();
+  const aspecto = t.ancho / t.alto;
+
+  let w = actual.w / factor;
+  w = Math.max(t.ancho / ZOOM_MAXIMO, Math.min(t.ancho, w));
+  const h = w / aspecto;
+
+  const p = aCoordenadasSvg(clientX, clientY);
+  const fx = (p.x - actual.x) / actual.w;
+  const fy = (p.y - actual.y) / actual.h;
+
+  let x = p.x - fx * w;
+  let y = p.y - fy * h;
+  x = Math.max(0, Math.min(t.ancho - w, x));
+  y = Math.max(0, Math.min(t.alto - h, y));
+
+  // Si vuelve a verse todo, se limpia la ventana (así el botón ⟲ se apaga).
+  S.mapaVista = w >= t.ancho - 0.5 ? null : { x, y, w, h };
+  aplicarVista();
+}
+
+function zoomCentro(factor) {
+  const marco = els.mapa.getBoundingClientRect();
+  zoomEn(marco.left + marco.width / 2, marco.top + marco.height / 2, factor);
+}
+
+let arrastre = null;
+
+els.mapa.addEventListener(
+  'wheel',
+  (e) => {
+    if (!S.mapaTamano) return;
+    e.preventDefault();
+    zoomEn(e.clientX, e.clientY, e.deltaY > 0 ? 0.85 : 1.18);
+  },
+  { passive: false },
+);
+
+els.mapa.addEventListener('mousedown', (e) => {
+  if (!S.mapaVista) return;
+  arrastre = { origen: aCoordenadasSvg(e.clientX, e.clientY), vista: { ...S.mapaVista } };
+  els.mapa.classList.add('arrastrando');
+  e.preventDefault();
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!arrastre) return;
+  const t = S.mapaTamano;
+  const p = aCoordenadasSvg(e.clientX, e.clientY);
+  const dx = arrastre.origen.x - p.x;
+  const dy = arrastre.origen.y - p.y;
+
+  let x = arrastre.vista.x + dx;
+  let y = arrastre.vista.y + dy;
+  x = Math.max(0, Math.min(t.ancho - arrastre.vista.w, x));
+  y = Math.max(0, Math.min(t.alto - arrastre.vista.h, y));
+
+  S.mapaVista = { ...arrastre.vista, x, y };
+  aplicarVista();
+});
+
+window.addEventListener('mouseup', () => {
+  if (!arrastre) return;
+  arrastre = null;
+  els.mapa.classList.remove('arrastrando');
+});
+
+els.mapa.addEventListener('dblclick', () => {
+  S.mapaVista = null;
+  aplicarVista();
+});
+
+els.zoomMas.addEventListener('click', () => zoomCentro(1.4));
+els.zoomMenos.addEventListener('click', () => zoomCentro(1 / 1.4));
+els.zoomReset.addEventListener('click', () => {
+  S.mapaVista = null;
+  aplicarVista();
+});
+
 function mostrarTip(evento, html) {
   const tip = els.mapaTip;
   tip.innerHTML = html;
@@ -529,7 +658,10 @@ function renderMapa() {
   const validos = todos.filter((p) => p.lat != null && p.lon != null);
 
   if (!validos.length) {
+    S.mapaTamano = null;
+    S.mapaVista = null;
     svg.setAttribute('viewBox', '0 0 1000 400');
+    els.mapaNivel.textContent = '';
     const t = svgEl('text', { x: 500, y: 200, class: 'mapa__vacio' });
     t.textContent = 'Todavía no hay casos con coordenadas.';
     svg.append(t);
@@ -550,7 +682,19 @@ function renderMapa() {
 
   const ancho = 900;
   const alto = Math.max(360, Math.min(1000, Math.round((ancho * altoKm) / anchoKm)));
-  svg.setAttribute('viewBox', `0 0 ${ancho} ${alto}`);
+
+  // El lienzo cambia cuando llegan casos nuevos: si el usuario estaba
+  // acercado, se conserva el zoom pero se mete dentro de los nuevos límites.
+  S.mapaTamano = { ancho, alto };
+  if (S.mapaVista) {
+    const v = S.mapaVista;
+    v.w = Math.min(v.w, ancho);
+    v.h = v.w / (ancho / alto);
+    v.x = Math.max(0, Math.min(ancho - v.w, v.x));
+    v.y = Math.max(0, Math.min(alto - v.h, v.y));
+    if (v.w >= ancho - 0.5) S.mapaVista = null;
+  }
+  aplicarVista();
 
   const proj = proyectarMapa(todos, ancho, alto);
 

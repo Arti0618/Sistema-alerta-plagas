@@ -298,6 +298,16 @@ Todo lo que está pasando, dibujado sobre el terreno de la región:
 - **Capas** que se pueden prender y apagar, **escala gráfica de 5 km** y rejilla
   cada 2 km.
 
+El mapa ocupa **todo el marco disponible** y se puede recorrer:
+
+| Acción | Cómo |
+| --- | --- |
+| Acercar y alejar | Rueda del mouse (el zoom se centra en el cursor) o los botones **＋** / **−** |
+| Desplazarse | Arrastrar con el mouse |
+| Ver todo otra vez | Botón **⟲** o doble clic |
+
+El indicador de la esquina muestra el nivel de acercamiento (de 100 % a 2500 %).
+
 El mapa base son teselas de **OpenStreetMap** (libres, sin clave). El dibujo se
 hace con un **SVG propio**, sin librerías de mapas, y la proyección es **Web
 Mercator**: por eso las teselas encajan y los círculos de 5 km miden 5 km de
