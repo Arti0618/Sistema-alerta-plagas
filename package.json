@@ -1,0 +1,14 @@
+{
+  "name": "proyecto-dima-moises",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Panel web sencillo para leer y responder mensajes de un bot de Telegram.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "configurar": "node configurar.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,20 @@
+# Dependencias
+node_modules/
+
+# Datos y secretos: nunca al repositorio
+data/
+.env
+.env.*
+!.env.example
+
+# Respaldos y temporales
+*.bak
+*.log
+*.tar.gz
+*.zip
+respaldos/
+
+# Sistema operativo
+Thumbs.db
+.DS_Store
+desktop.ini

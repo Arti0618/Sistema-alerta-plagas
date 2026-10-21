@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alerta Plaga · Los Artilleros</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__marca">
+      <span class="topbar__icono">🌾</span>
+      <div>
+        <div class="topbar__titulo">Alerta Plaga</div>
+        <div class="topbar__sub" id="equipoNombre">Los Artilleros</div>
+      </div>
+    </div>
+
+    <div class="topbar__metricas" id="topbarMetricas">
+      <div class="mini"><span class="mini__k">Puntos</span><span class="mini__v" id="mPuntos">—</span></div>
+      <div class="mini"><span class="mini__k">Lugar</span><span class="mini__v" id="mLugar">—</span></div>
+      <div class="mini"><span class="mini__k">Enviados</span><span class="mini__v" id="mEnviados">—</span></div>
+      <div class="mini"><span class="mini__k">Publicados</span><span class="mini__v" id="mPublicados">—</span></div>
+    </div>
+
+    <div class="topbar__acciones">
+      <span class="pill" id="estadoBot">Conectando…</span>
+      <button class="btn" id="btnRevisar" title="Buscar reportes nuevos ahora">Revisar ahora</button>
+      <button class="btn btn--ghost" id="btnDiag" title="Comprobar conexiones">Diagnóstico</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab is-active" data-vista="consultas">Consultas <span class="tab__num" id="tabNumConsultas">0</span></button>
+    <button class="tab" data-vista="telegram">Telegram</button>
+    <button class="tab" data-vista="pruebas">Pruebas y diagnóstico</button>
+  </nav>
+
+  <main class="contenido">
+    <!-- ------------------------------ CONSULTAS ------------------------------ -->
+    <section class="vista is-active" id="vista-consultas">
+      <div class="tarjetas">
+        <button class="tarjeta" data-filtro="todas"><span class="tarjeta__k">Consultas</span><span class="tarjeta__v" id="cTotal">0</span></button>
+        <button class="tarjeta tarjeta--urgente" data-filtro="urgentes"><span class="tarjeta__k">Urgentes</span><span class="tarjeta__v" id="cUrgentes">0</span></button>
+        <button class="tarjeta tarjeta--cuarentena" data-filtro="cuarentenaria"><span class="tarjeta__k">Cuarentenarias</span><span class="tarjeta__v" id="cCuarentenarias">0</span></button>
+        <button class="tarjeta" data-filtro="plaga"><span class="tarjeta__k">Reportes de plaga</span><span class="tarjeta__v" id="cPlagas">0</span></button>
+        <button class="tarjeta" data-filtro="registrado"><span class="tarjeta__k">Registradas</span><span class="tarjeta__v" id="cRegistradas">0</span></button>
+        <button class="tarjeta tarjeta--error" data-filtro="errores"><span class="tarjeta__k">Con error</span><span class="tarjeta__v" id="cErrores">0</span></button>
+      </div>
+
+      <div class="barra">
+        <div class="chips" id="chips">
+          <button class="chip is-active" data-filtro="todas">Todas</button>
+          <button class="chip" data-filtro="urgentes">Urgentes</button>
+          <button class="chip" data-filtro="cuarentenaria">Cuarentenarias</button>
+          <button class="chip" data-filtro="plaga">Plagas</button>
+          <button class="chip" data-filtro="otras">No son plaga</button>
+          <button class="chip" data-filtro="errores">Errores</button>
+        </div>
+        <input class="buscar" id="buscar" type="search" placeholder="Buscar por folio, productor, plaga, localidad…" autocomplete="off">
+      </div>
+
+      <div class="tabla" id="tabla">
+        <div class="tabla__cabecera">
+          <span>Fecha</span><span>Productor</span><span>Tipo de consulta</span>
+          <span>Vía</span><span>Plaga</span><span>Urgencia</span><span>Estado</span>
+        </div>
+        <div class="tabla__cuerpo" id="tablaCuerpo"></div>
+      </div>
+    </section>
+
+    <!-- ------------------------------ TELEGRAM ------------------------------ -->
+    <section class="vista" id="vista-telegram">
+      <div class="tg">
+        <aside class="tg__lista">
+          <div class="tg__listaCab">
+            <input class="buscar" id="buscarChat" type="search" placeholder="Buscar conversación…" autocomplete="off">
+          </div>
+          <ul class="chats" id="chats"></ul>
+        </aside>
+
+        <div class="tg__chat">
+          <header class="tg__cab">
+            <button class="icon-btn volver" id="btnVolver" title="Volver">‹</button>
+            <div>
+              <div class="tg__titulo" id="tgTitulo">Selecciona una conversación</div>
+              <div class="tg__sub" id="tgSub">El bot responde solo, como ingeniero especialista en plagas.</div>
+            </div>
+          </header>
+
+          <div class="mensajes" id="mensajes">
+            <div class="vacio"><p>Sin conversaciones todavía.</p><p class="apagado">Escribe a @Artilleros_bot desde Telegram.</p></div>
+          </div>
+
+          <form class="redactor" id="redactor">
+            <textarea id="entrada" rows="1" placeholder="Escribe una respuesta… (Enter para enviar)" disabled></textarea>
+            <button type="submit" class="btn btn--principal" id="btnEnviar" disabled>Enviar</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------ PRUEBAS ------------------------------ -->
+    <section class="vista" id="vista-pruebas">
+      <div class="panel">
+        <h2>Probar el agente</h2>
+        <p class="apagado">Simula un mensaje de productor. No se registra nada en la API: solo se muestra cómo lo interpretaría el ingeniero.</p>
+        <textarea id="textoPrueba" rows="3" placeholder="Ejemplo: Buenos días, en mi parcela de frijol las hojas se están poniendo amarillas y traen un polvo café rojizo por debajo."></textarea>
+        <button class="btn btn--principal" id="btnProbar">Interpretar</button>
+        <div id="resultadoPrueba" class="resultado"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Diagnóstico del sistema</h2>
+        <button class="btn" id="btnDiag2">Comprobar conexiones</button>
+        <div id="resultadoDiag" class="resultado"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Cómo está configurado</h2>
+        <div id="configInfo" class="resultado"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ------------------------------ DETALLE ------------------------------ -->
+  <div class="cajon" id="cajon" hidden>
+    <div class="cajon__fondo" id="cajonFondo"></div>
+    <aside class="cajon__panel">
+      <header class="cajon__cab">
+        <div>
+          <div class="cajon__titulo" id="detTitulo">—</div>
+          <div class="cajon__sub" id="detSub">—</div>
+        </div>
+        <button class="icon-btn" id="btnCerrar" title="Cerrar">✕</button>
+      </header>
+      <div class="cajon__cuerpo" id="detCuerpo"></div>
+      <footer class="cajon__pie">
+        <button class="btn" id="btnReprocesar">Reprocesar con IA</button>
+      </footer>
+    </aside>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
