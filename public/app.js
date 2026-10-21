@@ -63,6 +63,7 @@ const els = {
   mapa: $('mapa'),
   mapaResumen: $('mapaResumen'),
   mapaTip: $('mapaTip'),
+  capaBase: $('capaBase'),
   capaCasos: $('capaCasos'),
   capaBrotes: $('capaBrotes'),
   capaTecnicos: $('capaTecnicos'),
@@ -378,7 +379,15 @@ function renderDetalle() {
 /* Mapa                                                                */
 /* ------------------------------------------------------------------ */
 
-const MAPA = { ancho: 1000, alto: 640, margen: 46, kmPorGrado: 111.32 };
+const MAPA = {
+  // El ancho y el alto del lienzo se calculan en cada dibujo, a partir de la
+  // forma de la zona (ver renderMapa).
+  margen: 46,
+  kmPorGrado: 111.32,
+  // Servidor de teselas del mapa base. Es el mapa libre de OpenStreetMap:
+  // no necesita clave ni registro.
+  teselas: 'https://tile.openstreetmap.org',
+};
 
 const COLOR_SEMAFORO = {
   rojo: '#e0554f',
@@ -394,49 +403,104 @@ function svgEl(tag, attrs = {}) {
 }
 
 /**
- * Proyección sencilla: se trabaja en kilómetros alrededor del centro del
- * conjunto y se corrige la longitud por el coseno de la latitud, para que las
- * distancias se vean a escala real (importante para los círculos de 5 km).
+ * Coordenadas de Web Mercator (las mismas que usan los mapas y sus teselas).
+ * Van de 0 a 1 en el mundo entero.
  */
-function proyectarMapa(puntos) {
+function mercator(lat, lon) {
+  const sen = Math.sin((lat * Math.PI) / 180);
+  return {
+    x: (lon + 180) / 360,
+    y: 0.5 - Math.log((1 + sen) / (1 - sen)) / (4 * Math.PI),
+  };
+}
+
+/**
+ * Proyección del mapa. Se usa Web Mercator para que las teselas del mapa base
+ * encajen exactamente, y se calcula la escala en kilómetros tomando dos puntos
+ * separados 0.1° de latitud alrededor del centro: así los círculos de 5 km
+ * miden 5 km de verdad en pantalla.
+ */
+function proyectarMapa(puntos, ancho, alto) {
   const validos = puntos.filter((p) => p.lat != null && p.lon != null);
   if (!validos.length) return null;
 
-  const lats = validos.map((p) => p.lat);
-  const lons = validos.map((p) => p.lon);
-  const latMin = Math.min(...lats);
-  const latMax = Math.max(...lats);
-  const lonMin = Math.min(...lons);
-  const lonMax = Math.max(...lons);
+  const proyectados = validos.map((p) => ({ ...mercator(p.lat, p.lon), lat: p.lat, lon: p.lon }));
 
-  const lat0 = (latMin + latMax) / 2;
-  const lon0 = (lonMin + lonMax) / 2;
-  const cos = Math.cos((lat0 * Math.PI) / 180);
+  const xs = proyectados.map((p) => p.x);
+  const ys = proyectados.map((p) => p.y);
+  let minX = Math.min(...xs);
+  let maxX = Math.max(...xs);
+  let minY = Math.min(...ys);
+  let maxY = Math.max(...ys);
 
-  const anchoKm = Math.max(0.4, (lonMax - lonMin) * MAPA.kmPorGrado * cos);
-  const altoKm = Math.max(0.4, (latMax - latMin) * MAPA.kmPorGrado);
+  // Un poco de aire para que nada quede pegado al borde.
+  const margenX = Math.max((maxX - minX) * 0.04, 1e-5);
+  const margenY = Math.max((maxY - minY) * 0.04, 1e-5);
+  minX -= margenX;
+  maxX += margenX;
+  minY -= margenY;
+  maxY += margenY;
 
-  const utilAncho = MAPA.ancho - 2 * MAPA.margen;
-  const utilAlto = MAPA.alto - 2 * MAPA.margen;
-  const escala = Math.min(utilAncho / anchoKm, utilAlto / altoKm);
+  const utilAncho = ancho - 2 * MAPA.margen;
+  const utilAlto = alto - 2 * MAPA.margen;
 
-  const cx = MAPA.ancho / 2;
-  const cy = MAPA.alto / 2;
+  // Mercator es conforme: la misma escala en x y en y no deforma.
+  const escala = Math.min(utilAncho / (maxX - minX), utilAlto / (maxY - minY));
 
-  return {
-    escala,
-    lat0,
-    lon0,
-    cos,
-    anchoKm,
-    altoKm,
-    aPixel(lat, lon) {
-      return {
-        x: cx + (lon - lon0) * MAPA.kmPorGrado * cos * escala,
-        y: cy - (lat - lat0) * MAPA.kmPorGrado * escala,
-      };
-    },
+  const anchoPx = (maxX - minX) * escala;
+  const altoPx = (maxY - minY) * escala;
+  const offsetX = MAPA.margen + (utilAncho - anchoPx) / 2;
+  const offsetY = MAPA.margen + (utilAlto - altoPx) / 2;
+
+  const aPixel = (lat, lon) => {
+    const m = mercator(lat, lon);
+    return {
+      x: offsetX + (m.x - minX) * escala,
+      y: offsetY + (m.y - minY) * escala,
+    };
   };
+
+  // Kilómetros por píxel, medidos en el centro (0.1° de latitud ≈ 11.132 km).
+  const latCentro = (Math.min(...validos.map((p) => p.lat)) + Math.max(...validos.map((p) => p.lat))) / 2;
+  const kmPorPixel =
+    (0.1 * MAPA.kmPorGrado) /
+    Math.max(1e-6, Math.abs(aPixel(latCentro + 0.05, 0).y - aPixel(latCentro - 0.05, 0).y));
+
+  // Zoom de las teselas para que su resolución coincida con la del dibujo.
+  const zoom = Math.max(9, Math.min(17, Math.round(Math.log2(escala / 256))));
+
+  return { escala, minX, minY, maxX, maxY, offsetX, offsetY, aPixel, kmPorPixel, zoom, latCentro };
+}
+
+/** Teselas del mapa base que cubren el área visible. */
+function teselasDelMapa(proj) {
+  const z = proj.zoom;
+  const n = 2 ** z;
+  const lado = proj.escala / n; // tamaño de cada tesela, en píxeles
+
+  // Esquinas del área visible en coordenadas de Mercator.
+  const x0 = proj.minX;
+  const x1 = proj.maxX;
+  const y0 = proj.minY;
+  const y1 = proj.maxY;
+
+  const t0x = Math.max(0, Math.floor(x0 * n));
+  const t1x = Math.min(n - 1, Math.floor(x1 * n));
+  const t0y = Math.max(0, Math.floor(y0 * n));
+  const t1y = Math.min(n - 1, Math.floor(y1 * n));
+
+  const lista = [];
+  for (let tx = t0x; tx <= t1x; tx++) {
+    for (let ty = t0y; ty <= t1y; ty++) {
+      lista.push({
+        url: `${MAPA.teselas}/${z}/${tx}/${ty}.png`,
+        x: proj.offsetX + (tx / n - proj.minX) * proj.escala,
+        y: proj.offsetY + (ty / n - proj.minY) * proj.escala,
+        lado,
+      });
+    }
+  }
+  return lista;
 }
 
 function mostrarTip(evento, html) {
@@ -462,38 +526,82 @@ function renderMapa() {
   if (!datos) return;
 
   const todos = [...(datos.casos || []), ...(datos.tecnicos || [])];
-  const proj = proyectarMapa(todos);
+  const validos = todos.filter((p) => p.lat != null && p.lon != null);
 
-  if (!proj) {
-    const t = svgEl('text', { x: MAPA.ancho / 2, y: MAPA.alto / 2, class: 'mapa__vacio' });
+  if (!validos.length) {
+    svg.setAttribute('viewBox', '0 0 1000 400');
+    const t = svgEl('text', { x: 500, y: 200, class: 'mapa__vacio' });
     t.textContent = 'Todavía no hay casos con coordenadas.';
     svg.append(t);
     return;
   }
 
+  // El lienzo se adapta a la forma real de la zona: la región de Texcoco es
+  // más alta que ancha, así que un mapa apaisado dejaría los datos como una
+  // tira angosta en el centro.
+  const lats = validos.map((p) => p.lat);
+  const lons = validos.map((p) => p.lon);
+  const latCentroZona = (Math.min(...lats) + Math.max(...lats)) / 2;
+  const altoKm = Math.max(0.5, (Math.max(...lats) - Math.min(...lats)) * MAPA.kmPorGrado);
+  const anchoKm = Math.max(
+    0.5,
+    (Math.max(...lons) - Math.min(...lons)) * MAPA.kmPorGrado * Math.cos((latCentroZona * Math.PI) / 180),
+  );
+
+  const ancho = 900;
+  const alto = Math.max(360, Math.min(1000, Math.round((ancho * altoKm) / anchoKm)));
+  svg.setAttribute('viewBox', `0 0 ${ancho} ${alto}`);
+
+  const proj = proyectarMapa(todos, ancho, alto);
+
+  if (!proj) return;
+
+  const radio5km = 5 / proj.kmPorPixel;
+
+  // Fondo del mapa base (teselas de OpenStreetMap). Si no hay internet, las
+  // imágenes simplemente no cargan y el resto del mapa sigue funcionando.
+  const fondo = svgEl('rect', { x: 0, y: 0, width: ancho, height: alto, fill: '#0e1621' });
+  svg.append(fondo);
+
+  if (els.capaBase.checked) {
+    const g = svgEl('g');
+    for (const t of teselasDelMapa(proj)) {
+      const img = svgEl('image', {
+        href: t.url,
+        x: t.x,
+        y: t.y,
+        width: t.lado,
+        height: t.lado,
+        preserveAspectRatio: 'none',
+      });
+      img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', t.url);
+      img.setAttribute('opacity', '0.85');
+      g.append(img);
+    }
+    svg.append(g);
+  }
+
   // Rejilla cada 2 km
-  const rejilla = svgEl('g', { opacity: '0.14' });
-  for (let km = -20; km <= 20; km += 2) {
-    const centro = proj.aPixel(proj.lat0, proj.lon0);
-    const dx = km * proj.escala;
-    rejilla.append(
-      svgEl('line', { x1: centro.x + dx, y1: 0, x2: centro.x + dx, y2: MAPA.alto, stroke: '#7b8b9c', 'stroke-width': 1 }),
-    );
-    rejilla.append(
-      svgEl('line', { x1: 0, y1: centro.y + dx, x2: MAPA.ancho, y2: centro.y + dx, stroke: '#7b8b9c', 'stroke-width': 1 }),
-    );
+  const pasoRejilla = 2 / proj.kmPorPixel;
+  const rejilla = svgEl('g', { opacity: '0.13' });
+  for (let x = MAPA.margen; x <= ancho - MAPA.margen; x += pasoRejilla) {
+    rejilla.append(svgEl('line', { x1: x, y1: 0, x2: x, y2: alto, stroke: '#ffffff', 'stroke-width': 1 }));
+  }
+  for (let y = MAPA.margen; y <= alto - MAPA.margen; y += pasoRejilla) {
+    rejilla.append(svgEl('line', { x1: 0, y1: y, x2: ancho, y2: y, stroke: '#ffffff', 'stroke-width': 1 }));
   }
   svg.append(rejilla);
 
   // Escala gráfica (5 km)
   const esc = svgEl('g');
   const x0 = 24;
-  const y0 = MAPA.alto - 24;
-  const largo = 5 * proj.escala;
-  esc.append(svgEl('line', { x1: x0, y1: y0, x2: x0 + largo, y2: y0, stroke: '#7b8b9c', 'stroke-width': 2 }));
-  esc.append(svgEl('line', { x1: x0, y1: y0 - 5, x2: x0, y2: y0 + 5, stroke: '#7b8b9c', 'stroke-width': 2 }));
-  esc.append(svgEl('line', { x1: x0 + largo, y1: y0 - 5, x2: x0 + largo, y2: y0 + 5, stroke: '#7b8b9c', 'stroke-width': 2 }));
-  const etiqueta = svgEl('text', { x: x0, y: y0 - 10, fill: '#7b8b9c', 'font-size': '12' });
+  const y0 = alto - 24;
+  const largo = radio5km;
+  const blanco = '#e9eef3';
+  esc.append(svgEl('line', { x1: x0, y1: y0, x2: x0 + largo, y2: y0, stroke: blanco, 'stroke-width': 3 }));
+  esc.append(svgEl('line', { x1: x0, y1: y0 - 6, x2: x0, y2: y0 + 6, stroke: blanco, 'stroke-width': 3 }));
+  esc.append(svgEl('line', { x1: x0 + largo, y1: y0 - 6, x2: x0 + largo, y2: y0 + 6, stroke: blanco, 'stroke-width': 3 }));
+  const etiqueta = svgEl('text', { x: x0, y: y0 - 12, fill: blanco, 'font-size': '13', 'font-weight': '600' });
   etiqueta.textContent = '5 km';
   esc.append(etiqueta);
   svg.append(esc);
@@ -507,11 +615,11 @@ function renderMapa() {
         svgEl('circle', {
           cx: p.x,
           cy: p.y,
-          r: 5 * proj.escala,
-          fill: 'rgba(224,85,79,0.10)',
-          stroke: '#e0554f',
-          'stroke-width': 1.5,
-          'stroke-dasharray': '5 4',
+          r: radio5km,
+          fill: 'rgba(224,85,79,0.16)',
+          stroke: '#ff6b6b',
+          'stroke-width': 2,
+          'stroke-dasharray': '6 4',
         }),
       );
     }
@@ -520,17 +628,17 @@ function renderMapa() {
 
   // Radio de 5 km en cada caso (opcional)
   if (els.capaRadio.checked) {
-    const g = svgEl('g', { opacity: '0.5' });
+    const g = svgEl('g', { opacity: '0.55' });
     for (const c of datos.casos) {
       const p = proj.aPixel(c.lat, c.lon);
       g.append(
         svgEl('circle', {
           cx: p.x,
           cy: p.y,
-          r: 5 * proj.escala,
+          r: radio5km,
           fill: 'none',
           stroke: COLOR_SEMAFORO[c.semaforo] || '#6b7c8d',
-          'stroke-width': 1,
+          'stroke-width': 1.2,
           'stroke-dasharray': '3 3',
         }),
       );
@@ -887,7 +995,7 @@ document.querySelectorAll('.tab').forEach((tab) => {
 });
 
 // Capas del mapa
-[els.capaCasos, els.capaBrotes, els.capaTecnicos, els.capaRadio].forEach((c) => {
+[els.capaBase, els.capaCasos, els.capaBrotes, els.capaTecnicos, els.capaRadio].forEach((c) => {
   c.addEventListener('change', renderMapa);
 });
 

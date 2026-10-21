@@ -254,6 +254,7 @@ mismo resultado.
 | --- | --- |
 | **Notas de voz y fotos** | Gemini transcribe el `.ogg` y describe la foto en la misma llamada |
 | **Panel web** | Con las consultas, su semáforo, su técnico, su brote y el historial de Telegram |
+| **Mapa** | Los casos, los brotes (con su radio de 5 km) y los técnicos dibujados sobre el terreno, con el mapa real de la zona |
 | **Aprobación del coordinador** | Los casos rojos/naranjas y los brotes llegan a Telegram con botones **Aprobar** y **Cambiar técnico**; hasta que se aprueba no se manda el folio al productor ni el caso al técnico |
 | **Aviso a los vecinos** | Cuando hay brote se avisa, en un solo `POST /avisos`, a todos los productores con parcela del mismo cultivo a menos de 5 km |
 | **Seguimientos** | El agente reconoce que el mensaje continúa un caso ya abierto y no abre uno nuevo |
@@ -284,6 +285,24 @@ vía, plaga, urgencia y estado**.
 La columna **Urgencia** muestra el semáforo (`ROJO`, `NARANJA`, `AMARILLO`,
 `VERDE`) y, cuando no aplica, explica por qué: `seguimiento`, `respuesta`,
 `no es plaga`, `sin aclarar` o `chat directo`.
+
+### Mapa
+
+Todo lo que está pasando, dibujado sobre el terreno de la región:
+
+- **Casos**: un punto por reporte, con el **color del semáforo** y un tamaño
+  proporcional a la prioridad. Al pasar el mouse muestra el detalle y al hacer
+  clic abre la ficha completa.
+- **Brotes**: un círculo de **5 km** alrededor de cada caso marcado como brote.
+- **Técnicos**: un rombo en su base, con su carga actual.
+- **Capas** que se pueden prender y apagar, **escala gráfica de 5 km** y rejilla
+  cada 2 km.
+
+El mapa base son teselas de **OpenStreetMap** (libres, sin clave). El dibujo se
+hace con un **SVG propio**, sin librerías de mapas, y la proyección es **Web
+Mercator**: por eso las teselas encajan y los círculos de 5 km miden 5 km de
+verdad en pantalla. Si no hay internet, el mapa base no carga pero los puntos,
+los brotes y los técnicos se siguen viendo.
 
 ### Telegram
 
