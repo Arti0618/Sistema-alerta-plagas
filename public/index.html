@@ -32,6 +32,7 @@
 
   <nav class="tabs">
     <button class="tab is-active" data-vista="consultas">Consultas <span class="tab__num" id="tabNumConsultas">0</span></button>
+    <button class="tab" data-vista="mapa">Mapa</button>
     <button class="tab" data-vista="telegram">Telegram</button>
     <button class="tab" data-vista="pruebas">Pruebas y diagnóstico</button>
   </nav>
@@ -71,6 +72,33 @@
           <span>Vía</span><span>Plaga</span><span>Urgencia</span><span>Estado</span>
         </div>
         <div class="tabla__cuerpo" id="tablaCuerpo"></div>
+      </div>
+    </section>
+
+    <!-- ------------------------------ MAPA ------------------------------ -->
+    <section class="vista" id="vista-mapa">
+      <div class="mapa__barra">
+        <div class="mapa__resumen" id="mapaResumen">Cargando…</div>
+        <div class="mapa__capas">
+          <label class="capa"><input type="checkbox" id="capaCasos" checked> Casos</label>
+          <label class="capa"><input type="checkbox" id="capaBrotes" checked> Brotes (5 km)</label>
+          <label class="capa"><input type="checkbox" id="capaTecnicos" checked> Técnicos</label>
+          <label class="capa"><input type="checkbox" id="capaRadio"> Radio de 5 km en cada caso</label>
+        </div>
+      </div>
+
+      <div class="mapa__marco">
+        <svg id="mapa" viewBox="0 0 1000 640" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="mapa__leyenda">
+          <div><span class="punto-semaforo s-rojo"></span> Rojo (24 h)</div>
+          <div><span class="punto-semaforo s-naranja"></span> Naranja (48 h)</div>
+          <div><span class="punto-semaforo s-amarillo"></span> Amarillo (72 h)</div>
+          <div><span class="punto-semaforo s-verde"></span> Verde (7 días)</div>
+          <div><span class="punto-semaforo s-neutro"></span> Sin semáforo</div>
+          <div><span class="marca-brote"></span> Brote</div>
+          <div><span class="marca-tecnico"></span> Técnico</div>
+        </div>
+        <div class="mapa__tip" id="mapaTip" hidden></div>
       </div>
     </section>
 

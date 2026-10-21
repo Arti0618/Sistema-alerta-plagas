@@ -13,6 +13,7 @@ const S = {
   mensajes: [],
   detalle: null,
   vista: 'consultas',
+  mapa: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -58,6 +59,14 @@ const els = {
   resultadoPlazos: $('resultadoPlazos'),
   resultadoDiag: $('resultadoDiag'),
   configInfo: $('configInfo'),
+
+  mapa: $('mapa'),
+  mapaResumen: $('mapaResumen'),
+  mapaTip: $('mapaTip'),
+  capaCasos: $('capaCasos'),
+  capaBrotes: $('capaBrotes'),
+  capaTecnicos: $('capaTecnicos'),
+  capaRadio: $('capaRadio'),
 
   cajon: $('cajon'),
   cajonFondo: $('cajonFondo'),
@@ -366,6 +375,261 @@ function renderDetalle() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Mapa                                                                */
+/* ------------------------------------------------------------------ */
+
+const MAPA = { ancho: 1000, alto: 640, margen: 46, kmPorGrado: 111.32 };
+
+const COLOR_SEMAFORO = {
+  rojo: '#e0554f',
+  naranja: '#e58a3c',
+  amarillo: '#d9a02b',
+  verde: '#3aa876',
+};
+
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+  return el;
+}
+
+/**
+ * Proyección sencilla: se trabaja en kilómetros alrededor del centro del
+ * conjunto y se corrige la longitud por el coseno de la latitud, para que las
+ * distancias se vean a escala real (importante para los círculos de 5 km).
+ */
+function proyectarMapa(puntos) {
+  const validos = puntos.filter((p) => p.lat != null && p.lon != null);
+  if (!validos.length) return null;
+
+  const lats = validos.map((p) => p.lat);
+  const lons = validos.map((p) => p.lon);
+  const latMin = Math.min(...lats);
+  const latMax = Math.max(...lats);
+  const lonMin = Math.min(...lons);
+  const lonMax = Math.max(...lons);
+
+  const lat0 = (latMin + latMax) / 2;
+  const lon0 = (lonMin + lonMax) / 2;
+  const cos = Math.cos((lat0 * Math.PI) / 180);
+
+  const anchoKm = Math.max(0.4, (lonMax - lonMin) * MAPA.kmPorGrado * cos);
+  const altoKm = Math.max(0.4, (latMax - latMin) * MAPA.kmPorGrado);
+
+  const utilAncho = MAPA.ancho - 2 * MAPA.margen;
+  const utilAlto = MAPA.alto - 2 * MAPA.margen;
+  const escala = Math.min(utilAncho / anchoKm, utilAlto / altoKm);
+
+  const cx = MAPA.ancho / 2;
+  const cy = MAPA.alto / 2;
+
+  return {
+    escala,
+    lat0,
+    lon0,
+    cos,
+    anchoKm,
+    altoKm,
+    aPixel(lat, lon) {
+      return {
+        x: cx + (lon - lon0) * MAPA.kmPorGrado * cos * escala,
+        y: cy - (lat - lat0) * MAPA.kmPorGrado * escala,
+      };
+    },
+  };
+}
+
+function mostrarTip(evento, html) {
+  const tip = els.mapaTip;
+  tip.innerHTML = html;
+  tip.hidden = false;
+  const marco = els.mapa.parentElement.getBoundingClientRect();
+  const x = evento.clientX - marco.left;
+  const y = evento.clientY - marco.top;
+  tip.style.left = `${Math.min(x + 14, marco.width - 290)}px`;
+  tip.style.top = `${Math.max(y - 10, 8)}px`;
+}
+
+function ocultarTip() {
+  els.mapaTip.hidden = true;
+}
+
+function renderMapa() {
+  const svg = els.mapa;
+  const datos = S.mapa;
+  svg.textContent = '';
+
+  if (!datos) return;
+
+  const todos = [...(datos.casos || []), ...(datos.tecnicos || [])];
+  const proj = proyectarMapa(todos);
+
+  if (!proj) {
+    const t = svgEl('text', { x: MAPA.ancho / 2, y: MAPA.alto / 2, class: 'mapa__vacio' });
+    t.textContent = 'Todavía no hay casos con coordenadas.';
+    svg.append(t);
+    return;
+  }
+
+  // Rejilla cada 2 km
+  const rejilla = svgEl('g', { opacity: '0.14' });
+  for (let km = -20; km <= 20; km += 2) {
+    const centro = proj.aPixel(proj.lat0, proj.lon0);
+    const dx = km * proj.escala;
+    rejilla.append(
+      svgEl('line', { x1: centro.x + dx, y1: 0, x2: centro.x + dx, y2: MAPA.alto, stroke: '#7b8b9c', 'stroke-width': 1 }),
+    );
+    rejilla.append(
+      svgEl('line', { x1: 0, y1: centro.y + dx, x2: MAPA.ancho, y2: centro.y + dx, stroke: '#7b8b9c', 'stroke-width': 1 }),
+    );
+  }
+  svg.append(rejilla);
+
+  // Escala gráfica (5 km)
+  const esc = svgEl('g');
+  const x0 = 24;
+  const y0 = MAPA.alto - 24;
+  const largo = 5 * proj.escala;
+  esc.append(svgEl('line', { x1: x0, y1: y0, x2: x0 + largo, y2: y0, stroke: '#7b8b9c', 'stroke-width': 2 }));
+  esc.append(svgEl('line', { x1: x0, y1: y0 - 5, x2: x0, y2: y0 + 5, stroke: '#7b8b9c', 'stroke-width': 2 }));
+  esc.append(svgEl('line', { x1: x0 + largo, y1: y0 - 5, x2: x0 + largo, y2: y0 + 5, stroke: '#7b8b9c', 'stroke-width': 2 }));
+  const etiqueta = svgEl('text', { x: x0, y: y0 - 10, fill: '#7b8b9c', 'font-size': '12' });
+  etiqueta.textContent = '5 km';
+  esc.append(etiqueta);
+  svg.append(esc);
+
+  // Brotes: círculo de 5 km
+  if (els.capaBrotes.checked) {
+    const g = svgEl('g');
+    for (const c of datos.casos.filter((x) => x.brote)) {
+      const p = proj.aPixel(c.lat, c.lon);
+      g.append(
+        svgEl('circle', {
+          cx: p.x,
+          cy: p.y,
+          r: 5 * proj.escala,
+          fill: 'rgba(224,85,79,0.10)',
+          stroke: '#e0554f',
+          'stroke-width': 1.5,
+          'stroke-dasharray': '5 4',
+        }),
+      );
+    }
+    svg.append(g);
+  }
+
+  // Radio de 5 km en cada caso (opcional)
+  if (els.capaRadio.checked) {
+    const g = svgEl('g', { opacity: '0.5' });
+    for (const c of datos.casos) {
+      const p = proj.aPixel(c.lat, c.lon);
+      g.append(
+        svgEl('circle', {
+          cx: p.x,
+          cy: p.y,
+          r: 5 * proj.escala,
+          fill: 'none',
+          stroke: COLOR_SEMAFORO[c.semaforo] || '#6b7c8d',
+          'stroke-width': 1,
+          'stroke-dasharray': '3 3',
+        }),
+      );
+    }
+    svg.append(g);
+  }
+
+  // Casos
+  if (els.capaCasos.checked) {
+    const g = svgEl('g');
+    for (const c of datos.casos) {
+      const p = proj.aPixel(c.lat, c.lon);
+      const color = COLOR_SEMAFORO[c.semaforo] || '#6b7c8d';
+      const r = 5 + Math.round((c.prioridad || 0) / 25);
+
+      const circulo = svgEl('circle', {
+        cx: p.x,
+        cy: p.y,
+        r,
+        fill: color,
+        'fill-opacity': c.brote ? '0.95' : '0.75',
+        stroke: c.brote ? '#fff' : 'rgba(0,0,0,0.35)',
+        'stroke-width': c.brote ? 2 : 1,
+        cursor: 'pointer',
+      });
+
+      const detalle = [
+        `<b>${c.id}</b> · ${c.plaga_nombre || 'sin plaga'}`,
+        `Semáforo: <b>${c.semaforo || '—'}</b>${c.prioridad != null ? ` (prioridad ${c.prioridad})` : ''}`,
+        `Productor: ${c.productor || '—'}`,
+        `Parcela: ${c.parcela || '—'}${c.cultivo ? ` · ${c.cultivo}` : ''}`,
+        `Técnico: ${c.tecnico_nombre || 'sin asignar'}`,
+        c.brote ? '<b>⚠️ Brote</b>' : '',
+      ]
+        .filter(Boolean)
+        .join('<br>');
+
+      circulo.addEventListener('mouseenter', (e) => mostrarTip(e, detalle));
+      circulo.addEventListener('mousemove', (e) => mostrarTip(e, detalle));
+      circulo.addEventListener('mouseleave', ocultarTip);
+      circulo.addEventListener('click', () => abrirDetalle(c.id));
+
+      g.append(circulo);
+    }
+    svg.append(g);
+  }
+
+  // Técnicos
+  if (els.capaTecnicos.checked) {
+    const g = svgEl('g');
+    for (const t of datos.tecnicos || []) {
+      if (t.lat == null || t.lon == null) continue;
+      const p = proj.aPixel(t.lat, t.lon);
+
+      const rombo = svgEl('rect', {
+        x: p.x - 6,
+        y: p.y - 6,
+        width: 12,
+        height: 12,
+        transform: `rotate(45 ${p.x} ${p.y})`,
+        fill: '#6fa8dc',
+        stroke: '#0d1520',
+        'stroke-width': 1.5,
+      });
+
+      const detalle = [
+        `<b>${t.nombre}</b> (${t.id})`,
+        `Especialidad: ${t.especialidad === 'fitopatologia' ? 'fitopatología' : 'entomología'}`,
+        `Base: ${t.base || '—'}`,
+        `Carga: <b>${t.carga ?? 0}</b> / ${t.tope ?? 5}`,
+      ].join('<br>');
+
+      rombo.addEventListener('mouseenter', (e) => mostrarTip(e, detalle));
+      rombo.addEventListener('mousemove', (e) => mostrarTip(e, detalle));
+      rombo.addEventListener('mouseleave', ocultarTip);
+      g.append(rombo);
+    }
+    svg.append(g);
+  }
+
+  const r = datos.resumen || {};
+  els.mapaResumen.innerHTML =
+    `<b>${r.total ?? 0}</b> casos en el mapa · ` +
+    `brotes <b>${r.brotes ?? 0}</b> · ` +
+    `rojo ${r.porSemaforo?.rojo ?? 0} · naranja ${r.porSemaforo?.naranja ?? 0} · ` +
+    `amarillo ${r.porSemaforo?.amarillo ?? 0} · verde ${r.porSemaforo?.verde ?? 0} · ` +
+    `${(datos.tecnicos || []).length} técnicos`;
+}
+
+async function refrescarMapa() {
+  try {
+    S.mapa = await api('/api/mapa');
+    renderMapa();
+  } catch (err) {
+    els.mapaResumen.textContent = `Error: ${err.message}`;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Telegram                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -618,7 +882,13 @@ document.querySelectorAll('.tab').forEach((tab) => {
     tab.classList.add('is-active');
     S.vista = tab.dataset.vista;
     $(`vista-${S.vista}`).classList.add('is-active');
+    if (S.vista === 'mapa') refrescarMapa();
   });
+});
+
+// Capas del mapa
+[els.capaCasos, els.capaBrotes, els.capaTecnicos, els.capaRadio].forEach((c) => {
+  c.addEventListener('change', renderMapa);
 });
 
 function fijarFiltro(filtro) {
@@ -774,3 +1044,7 @@ refrescarPanel();
 renderMensajes();
 setInterval(refrescarPanel, 3000);
 setInterval(refrescarMensajes, 2500);
+// El mapa solo se refresca mientras está a la vista.
+setInterval(() => {
+  if (S.vista === 'mapa') refrescarMapa();
+}, 10000);

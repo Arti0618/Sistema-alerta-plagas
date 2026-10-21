@@ -232,6 +232,77 @@ function getConsulta(res, id) {
   enviarJson(res, 200, { consulta });
 }
 
+/**
+ * Datos para el mapa: casos con coordenadas, técnicos con su base y su carga,
+ * y los brotes detectados. El panel los dibuja en un SVG propio, sin depender
+ * de ningún servicio de mapas externo.
+ */
+async function getMapa(res) {
+  const casos = store
+    .listaConsultas()
+    .filter(
+      (c) =>
+        c.fuente === 'api' &&
+        c.lat != null &&
+        c.lon != null &&
+        !c.es_seguimiento &&
+        !c.es_respuesta,
+    )
+    .slice(0, 400)
+    .map((c) => ({
+      id: c.id,
+      lat: c.lat,
+      lon: c.lon,
+      plaga: c.plaga || null,
+      plaga_nombre: c.plaga_nombre || null,
+      semaforo: c.semaforo || null,
+      brote: c.brote === true,
+      prioridad: c.prioridad ?? null,
+      productor: c.productor || null,
+      parcela: c.parcela || null,
+      cultivo: c.cultivo || null,
+      localidad: c.localidad || null,
+      tecnico_id: c.tecnico_id || null,
+      tecnico_nombre: c.tecnico_nombre || null,
+      recibido: c.recibido || null,
+      registrado: Boolean(c.registrado),
+    }));
+
+  let tecnicos = [];
+  try {
+    tecnicos = await api.tecnicos();
+  } catch (err) {
+    console.error('[mapa] no se pudieron obtener los técnicos:', err.message);
+  }
+
+  const resumen = {
+    total: casos.length,
+    brotes: casos.filter((c) => c.brote).length,
+    porSemaforo: {
+      rojo: casos.filter((c) => c.semaforo === 'rojo').length,
+      naranja: casos.filter((c) => c.semaforo === 'naranja').length,
+      amarillo: casos.filter((c) => c.semaforo === 'amarillo').length,
+      verde: casos.filter((c) => c.semaforo === 'verde').length,
+    },
+  };
+
+  enviarJson(res, 200, {
+    casos,
+    tecnicos: (tecnicos || []).map((t) => ({
+      id: t.id,
+      nombre: t.nombre,
+      especialidad: t.especialidad,
+      base: t.base,
+      lat: t.lat,
+      lon: t.lon,
+      carga: t.carga,
+      tope: t.tope,
+    })),
+    resumen,
+    servidor: Date.now(),
+  });
+}
+
 function getMensajes(res, url) {
   const chatId = url.searchParams.get('chatId');
   if (!chatId) return enviarJson(res, 400, { error: 'Falta chatId' });
@@ -403,6 +474,7 @@ const servidor = http.createServer(async (req, res) => {
     if (pathname === '/api/plagas' && req.method === 'GET') {
       return enviarJson(res, 200, { plagas: await agente.obtenerCatalogo() });
     }
+    if (pathname === '/api/mapa' && req.method === 'GET') return await getMapa(res);
     if (pathname === '/api/mensajes' && req.method === 'GET') return getMensajes(res, url);
     if (pathname === '/api/consultas' && req.method === 'GET') return await getPanel(res, url);
 
