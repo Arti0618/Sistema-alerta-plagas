@@ -77,6 +77,13 @@ misma personalidad del ingeniero.
 
 ## 2. Cómo se instala
 
+> **Dónde corre el sistema.** En producción el sistema corre **en el servidor del
+> equipo**, controlado por `supervisor` (arranca solo y se reinicia si falla).
+> Está en marcha de forma permanente: **no hace falta tener ninguna computadora
+> prendida**. Esta sección explica cómo instalarlo y probarlo en una máquina
+> local, que es útil para desarrollar; el despliegue real está en la
+> [sección 4](#4-cómo-se-despliega-en-el-servidor).
+
 ### Requisitos
 
 - **Node.js 18 o superior** (probado con Node 22).
@@ -130,15 +137,25 @@ de `data/`. Hay una plantilla completa en **`.env.example`**.
 
 ## 4. Cómo se despliega en el servidor
 
-El sistema está pensado para correr en el servidor del equipo, gestionado por
-`supervisor` (arranca solo y se reinicia si falla).
+**Así es como corre en producción.** El sistema vive en el servidor del equipo,
+gestionado por `supervisor`: arranca solo al encender el servidor y se reinicia
+si falla. **Nadie necesita dejar su computadora prendida.**
+
+Comprobar que está en marcha, desde cualquier máquina:
 
 ```bash
-# Copiar el proyecto al servidor (sin data/ ni .git)
+ssh -p 2201 equipo01@179-236-73-82.sslip.io
+supervisorctl status app     # debe decir RUNNING
+```
+
+### Actualizarlo
+
+```bash
+# 1. Empaquetar el proyecto (sin data/ ni .git)
 tar -czf app.tar.gz --exclude=data --exclude=.git .
 scp -P 2201 app.tar.gz equipo01@179-236-73-82.sslip.io:~/
 
-# En el servidor
+# 2. En el servidor: descomprimir y reiniciar
 ssh -p 2201 equipo01@179-236-73-82.sslip.io
 tar -xzf ~/app.tar.gz -C ~/app
 supervisorctl restart app
