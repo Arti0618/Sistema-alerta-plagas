@@ -42,6 +42,7 @@
       <div class="tarjetas">
         <button class="tarjeta" data-filtro="todas"><span class="tarjeta__k">Consultas</span><span class="tarjeta__v" id="cTotal">0</span></button>
         <button class="tarjeta tarjeta--urgente" data-filtro="urgentes"><span class="tarjeta__k">Urgentes</span><span class="tarjeta__v" id="cUrgentes">0</span></button>
+        <button class="tarjeta tarjeta--brote" data-filtro="brotes"><span class="tarjeta__k">Brotes</span><span class="tarjeta__v" id="cBrotes">0</span></button>
         <button class="tarjeta tarjeta--cuarentena" data-filtro="cuarentenaria"><span class="tarjeta__k">Cuarentenarias</span><span class="tarjeta__v" id="cCuarentenarias">0</span></button>
         <button class="tarjeta" data-filtro="plaga"><span class="tarjeta__k">Reportes de plaga</span><span class="tarjeta__v" id="cPlagas">0</span></button>
         <button class="tarjeta" data-filtro="registrado"><span class="tarjeta__k">Registradas</span><span class="tarjeta__v" id="cRegistradas">0</span></button>
@@ -52,9 +53,11 @@
         <div class="chips" id="chips">
           <button class="chip is-active" data-filtro="todas">Todas</button>
           <button class="chip" data-filtro="urgentes">Urgentes</button>
+          <button class="chip" data-filtro="brotes">Brotes</button>
           <button class="chip" data-filtro="cuarentenaria">Cuarentenarias</button>
           <button class="chip" data-filtro="plaga">Plagas</button>
           <button class="chip" data-filtro="otras">No son plaga</button>
+          <button class="chip" data-filtro="seguimientos">Seguimientos</button>
           <button class="chip" data-filtro="errores">Errores</button>
         </div>
         <input class="buscar" id="buscar" type="search" placeholder="Buscar por folio, productor, plaga, localidad…" autocomplete="off">

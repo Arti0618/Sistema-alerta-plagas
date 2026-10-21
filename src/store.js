@@ -241,6 +241,35 @@ function obtenerConsulta(id) {
   return consultasMem.find((c) => c.id === id) || null;
 }
 
+/**
+ * Borra una consulta del almacén. Hace falta una función explícita porque
+ * quitar el elemento de la lista en memoria no basta: el guardado es por
+ * diferencia y nunca se enteraría de que hay que borrarla también en Supabase.
+ */
+async function eliminarConsulta(id) {
+  const indice = consultasMem.findIndex((c) => c.id === id);
+  if (indice === -1) return false;
+  consultasMem.splice(indice, 1);
+
+  const timer = timersConsultas.get(id);
+  if (timer) {
+    clearTimeout(timer);
+    timersConsultas.delete(id);
+  }
+
+  escribirJsonLocal('consultas.json', { items: consultasMem });
+
+  if (config.usaSupabase) {
+    try {
+      await supa.pedir(`app_consultas?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error(`[store] no se pudo borrar la consulta ${id} en Supabase: ${err.message}`);
+      return false;
+    }
+  }
+  return true;
+}
+
 function actualizarConsulta(id, cambios) {
   const consulta = obtenerConsulta(id);
   if (!consulta) return null;
@@ -313,6 +342,7 @@ module.exports = {
   listaConsultas,
   agregarConsulta,
   obtenerConsulta,
+  eliminarConsulta,
   actualizarConsulta,
   yaProcesado,
   marcarProcesado,

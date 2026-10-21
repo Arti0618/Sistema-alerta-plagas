@@ -110,6 +110,14 @@ async function avanceEquipo() {
 /* Resumen de consultas para el panel                                  */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Un caso es «urgente» en el Nivel 2 cuando su semáforo es rojo o naranja, o
+ * cuando hay brote: son exactamente los que disparan el aviso al coordinador.
+ */
+function esUrgente(c) {
+  return c.semaforo === 'rojo' || c.semaforo === 'naranja' || c.brote === true;
+}
+
 function resumenConsulta(c) {
   return {
     id: c.id,
@@ -128,8 +136,14 @@ function resumenConsulta(c) {
     plaga_nombre: c.plaga_nombre,
     severidad: c.severidad,
     cuarentenaria: c.cuarentenaria,
+    // Nivel 2: lo que el panel necesita para pintar el semáforo y el resto
     prioridad: c.prioridad,
-    urgente: c.urgente,
+    semaforo: c.semaforo || null,
+    tecnico_id: c.tecnico_id || null,
+    tecnico_nombre: c.tecnico_nombre || null,
+    brote: c.brote ?? null,
+    es_seguimiento: Boolean(c.es_seguimiento),
+    porcentaje: c.porcentaje ?? null,
     confianza: c.confianza,
     modelo: c.modelo || null,
     es_respuesta: Boolean(c.es_respuesta),
@@ -148,10 +162,12 @@ function aplicarFiltro(items, url) {
 
   let salida = items;
 
-  if (filtro === 'urgentes') salida = salida.filter((c) => c.urgente);
+  if (filtro === 'urgentes') salida = salida.filter(esUrgente);
+  else if (filtro === 'brotes') salida = salida.filter((c) => c.brote === true);
   else if (filtro === 'cuarentenaria') salida = salida.filter((c) => c.cuarentenaria);
   else if (filtro === 'plaga') salida = salida.filter((c) => c.es_plaga);
   else if (filtro === 'otras') salida = salida.filter((c) => !c.es_plaga);
+  else if (filtro === 'seguimientos') salida = salida.filter((c) => c.es_seguimiento);
   else if (filtro === 'registrado') salida = salida.filter((c) => c.registrado);
   else if (filtro === 'errores') salida = salida.filter((c) => c.estado === 'error' || c.error);
   else if (filtro === 'respuestas') salida = salida.filter((c) => c.es_respuesta);
@@ -184,7 +200,10 @@ async function getPanel(res, url) {
     sistema: procesador.estadoSistema(),
     totales: {
       consultas: todas.length,
-      urgentes: todas.filter((c) => c.urgente).length,
+      // «Urgente» en el Nivel 2 = semáforo rojo o naranja, o brote: es lo que
+      // dispara el aviso al coordinador.
+      urgentes: todas.filter(esUrgente).length,
+      brotes: todas.filter((c) => c.brote === true).length,
       plagas: todas.filter((c) => c.es_plaga).length,
       cuarentenarias: todas.filter((c) => c.cuarentenaria).length,
       registradas: todas.filter((c) => c.registrado).length,
@@ -284,17 +303,15 @@ async function postProbar(req, res) {
       contexto: { productor: 'Prueba del panel', fecha: new Date().toISOString() },
       adjuntos: [],
     });
-    const { porId } = agente;
-    const { esUrgente, explicarUrgencia, prioridad } = require('./src/reglas');
-    const plaga = interpretacion.es_plaga ? porId(interpretacion.plaga) : null;
+    const plaga = interpretacion.es_plaga ? agente.porId(interpretacion.plaga) : null;
 
     enviarJson(res, 200, {
       ok: true,
       interpretacion,
       plaga: plaga || null,
-      urgente: esUrgente(plaga),
-      motivo_urgencia: explicarUrgencia(plaga),
-      prioridad: prioridad(plaga),
+      // El semáforo depende de la parcela (superficie y etapa), y en una prueba
+      // de texto libre no hay parcela: por eso aquí solo se interpreta.
+      nota: 'El semáforo, el técnico y el brote necesitan una parcela real.',
     });
   } catch (err) {
     enviarJson(res, 502, { error: err.message });

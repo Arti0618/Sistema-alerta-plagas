@@ -31,6 +31,7 @@ const els = {
 
   cTotal: $('cTotal'),
   cUrgentes: $('cUrgentes'),
+  cBrotes: $('cBrotes'),
   cCuarentenarias: $('cCuarentenarias'),
   cPlagas: $('cPlagas'),
   cRegistradas: $('cRegistradas'),
@@ -130,12 +131,22 @@ function dato(clave, valor) {
   return fila;
 }
 
+/**
+ * Semáforo del caso. Desde el Nivel 2 el campo `semaforo` es un texto
+ * (rojo / naranja / amarillo / verde) y `prioridad` es un número de 0 a 100.
+ */
 function etiquetaUrgencia(c) {
-  if (c.cuarentenaria) return { texto: 'CUARENTENARIA', clase: 'e-cuarentenaria' };
-  if (c.prioridad === 'critica') return { texto: 'CRÍTICA', clase: 'e-critica' };
-  if (c.prioridad === 'alta') return { texto: 'ALTA', clase: 'e-alta' };
-  if (c.prioridad === 'media') return { texto: 'MEDIA', clase: 'e-media' };
-  if (c.prioridad === 'baja') return { texto: 'BAJA', clase: 'e-baja' };
+  if (c.semaforo === 'rojo') return { texto: 'ROJO', clase: 'e-rojo' };
+  if (c.semaforo === 'naranja') return { texto: 'NARANJA', clase: 'e-naranja' };
+  if (c.semaforo === 'amarillo') return { texto: 'AMARILLO', clase: 'e-amarillo' };
+  if (c.semaforo === 'verde') return { texto: 'VERDE', clase: 'e-verde' };
+
+  // Sin semáforo: explicar por qué, para que no parezca un error.
+  if (c.fuente === 'telegram') return { texto: 'chat directo', clase: 'e-neutra' };
+  if (c.es_respuesta) return { texto: 'respuesta', clase: 'e-neutra' };
+  if (c.es_seguimiento) return { texto: 'seguimiento', clase: 'e-neutra' };
+  if (c.es_plaga === false) return { texto: 'no es plaga', clase: 'e-neutra' };
+  if (c.plaga === 'desconocida') return { texto: 'sin aclarar', clase: 'e-neutra' };
   return { texto: '—', clase: 'e-neutra' };
 }
 
@@ -150,6 +161,7 @@ function renderConsultas() {
   const t = p.totales || {};
   els.cTotal.textContent = t.consultas ?? 0;
   els.cUrgentes.textContent = t.urgentes ?? 0;
+  els.cBrotes.textContent = t.brotes ?? 0;
   els.cCuarentenarias.textContent = t.cuarentenarias ?? 0;
   els.cPlagas.textContent = t.plagas ?? 0;
   els.cRegistradas.textContent = t.registradas ?? 0;
@@ -212,9 +224,15 @@ function renderConsultas() {
       texto = 'Pendiente';
     }
     estado.append(punto, document.createTextNode(texto));
-    if (c.urgente && c.aviso_enviado) {
-      estado.title = 'Aviso enviado al coordinador';
-    }
+
+    const avisos = [];
+    if (c.aviso_enviado) avisos.push('aviso enviado al coordinador');
+    if (c.telegram_enviado) avisos.push('alerta enviada por Telegram');
+    if (c.sanidad_avisada) avisos.push('sanidad vegetal avisada');
+    if (c.pregunta_enviada) avisos.push('pregunta enviada al productor');
+    if (c.brote === true) avisos.push('brote detectado');
+    if (avisos.length) estado.title = avisos.join(' · ');
+
     fila.append(estado);
 
     els.tablaCuerpo.append(fila);
@@ -268,8 +286,28 @@ function renderDetalle() {
   cuerpo.append(dato('Plaga', c.plaga ? `${c.plaga_nombre || c.plaga} (${c.plaga})` : '—'));
   cuerpo.append(dato('Severidad', c.severidad || '—'));
   cuerpo.append(dato('Cuarentenaria', c.cuarentenaria ? 'Sí' : 'No'));
-  cuerpo.append(dato('Urgente', c.urgente ? 'Sí' : 'No'));
-  cuerpo.append(dato('Motivo de la urgencia', c.motivo_urgencia || '—'));
+  if (c.es_seguimiento) cuerpo.append(dato('Tipo', 'Seguimiento (no abre caso nuevo)'));
+  if (c.es_respuesta) cuerpo.append(dato('Tipo', 'Respuesta a una pregunta'));
+
+  // Nivel 2
+  cuerpo.append(dato('Porcentaje afectado', c.porcentaje != null ? `${c.porcentaje} %` : '—'));
+  cuerpo.append(dato('Prioridad', c.prioridad != null ? `${c.prioridad} / 100` : '—'));
+  cuerpo.append(dato('Semáforo', e.texto));
+  cuerpo.append(
+    dato(
+      'Técnico',
+      c.tecnico_nombre ? `${c.tecnico_nombre} (${c.tecnico_id})` : 'ninguno disponible',
+    ),
+  );
+  cuerpo.append(dato('Brote', c.brote === true ? 'Sí' : c.brote === false ? 'No' : '—'));
+  if (c.brote_cuenta) {
+    cuerpo.append(dato('Casos cercanos de la misma plaga', c.brote_cuenta));
+  }
+  if (c.desglose_prioridad) {
+    const pre = el('pre');
+    pre.textContent = JSON.stringify(c.desglose_prioridad, null, 2);
+    cuerpo.append(dato('Cómo se calculó la prioridad', pre));
+  }
   cuerpo.append(dato('Confianza del modelo', c.confianza != null ? `${(c.confianza * 100).toFixed(0)} %` : '—'));
   cuerpo.append(dato('Razonamiento', c.razon || '—'));
 
@@ -516,21 +554,14 @@ async function probarAgente() {
     const out = els.resultadoPrueba;
     out.textContent = '';
 
-    const e = etiquetaUrgencia({
-      cuarentenaria: r.plaga?.cuarentenaria,
-      prioridad: r.prioridad,
-    });
-    const cab = el('div');
-    cab.style.marginBottom = '10px';
-    cab.append(el('span', `etiqueta ${e.clase}`, e.texto));
-    out.append(cab);
-
     out.append(dato('Título', i.titulo));
     out.append(dato('¿Es reporte de plaga?', i.es_plaga ? 'Sí' : 'No'));
     out.append(dato('Plaga detectada', r.plaga ? `${r.plaga.nombre} (${r.plaga.id})` : i.plaga || '—'));
+    out.append(dato('Porcentaje afectado', `${i.porcentaje ?? 10} %`));
+    out.append(dato('¿Es seguimiento?', i.es_seguimiento ? 'Sí' : 'No'));
     out.append(dato('Confianza', `${(i.confianza * 100).toFixed(0)} %`));
-    out.append(dato('Motivo de urgencia', r.motivo_urgencia));
     out.append(dato('Razonamiento', i.razon));
+    if (r.nota) out.append(dato('Nota', r.nota));
 
     const pre = el('pre');
     pre.textContent = i.respuesta;

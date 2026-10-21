@@ -222,7 +222,7 @@ async function avisarSanidadVegetal(consulta) {
  * campos en cualquier momento posterior; es la misma mecánica de
  * complementar.js, aplicada automáticamente cuando llega la aclaración.
  */
-async function resolverParcelaPendiente(reporte) {
+async function resolverParcelaPendiente(reporte, porcentajeDeRespuesta) {
   if (!reporte.respuesta_a) return;
 
   const original = store.obtenerConsulta(reporte.respuesta_a);
@@ -242,12 +242,22 @@ async function resolverParcelaPendiente(reporte) {
   console.log(`[parcela] ${original.id}: parcela identificada como ${encontrada.nombre} (${encontrada.id})`);
 
   const plagaCat = agente.porId(original.plaga);
+
+  // La respuesta suele traer el porcentaje afectado («ya va como en la mitad»,
+  // «una de cada cuatro matas»). Hay que usarlo: el original quedó con el valor
+  // por defecto (10) porque el primer mensaje no lo decía. Si la respuesta no
+  // aporta un porcentaje nuevo, se conserva el que ya tenía.
+  const porcentaje =
+    Number.isFinite(Number(porcentajeDeRespuesta)) && Number(porcentajeDeRespuesta) > 0
+      ? Number(porcentajeDeRespuesta)
+      : original.porcentaje;
+
   const propias = brotes.casosPropiosValidos(store.listaConsultas(), cache.parcelas);
   const calc = await derivados.calcular({
     idActual: original.id,
     plaga: plagaCat,
     parcela: encontrada,
-    porcentaje: original.porcentaje,
+    porcentaje,
     recibido: original.recibido,
     esSeguimiento: false,
     esRespuesta: false,
@@ -265,8 +275,10 @@ async function resolverParcelaPendiente(reporte) {
     lat: encontrada.lat,
     lon: encontrada.lon,
     parcela_resuelta: true,
+    porcentaje,
     prioridad: calc.prioridad,
     semaforo: calc.semaforo,
+    desglose_prioridad: calc.desglose,
     tecnico_id: calc.tecnico ? calc.tecnico.id : null,
     tecnico_nombre: calc.tecnico ? calc.tecnico.nombre : null,
     brote: calc.brote,
@@ -385,7 +397,9 @@ async function procesarReporte(reporte, { reintento = false, registrar = true } 
 
   if (esRespuesta) {
     try {
-      await resolverParcelaPendiente(reporte);
+      // Se le pasa el porcentaje que la IA leyó en la respuesta: suele traer
+      // el dato que faltaba en el mensaje original.
+      await resolverParcelaPendiente(reporte, interpretacion.porcentaje);
     } catch (err) {
       console.error(`[parcela] error al intentar resolver ${reporte.id}: ${err.message}`);
     }

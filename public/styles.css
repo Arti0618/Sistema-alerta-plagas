@@ -163,6 +163,7 @@ button { font: inherit; }
 .tarjeta__k { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--apagado); }
 .tarjeta__v { font-size: 24px; font-weight: 700; }
 .tarjeta--urgente { border-left-color: var(--naranja); }
+.tarjeta--brote { border-left-color: var(--morado); }
 .tarjeta--cuarentena { border-left-color: var(--rojo); }
 .tarjeta--error { border-left-color: var(--ambar); }
 
@@ -246,11 +247,11 @@ button { font: inherit; }
   border-radius: 20px;
   white-space: nowrap;
 }
-.e-cuarentenaria { background: rgba(217,83,79,.2); color: #ff9b96; }
-.e-critica { background: rgba(217,83,79,.2); color: #ff9b96; }
-.e-alta { background: rgba(224,123,43,.2); color: #ffb276; }
-.e-media { background: rgba(217,152,43,.2); color: #f0c268; }
-.e-baja { background: rgba(46,158,107,.2); color: #6ee7a8; }
+/* Semáforo del Nivel 2 */
+.e-rojo { background: rgba(217,83,79,.22); color: #ff9b96; }
+.e-naranja { background: rgba(224,123,43,.22); color: #ffb276; }
+.e-amarillo { background: rgba(217,152,43,.22); color: #f0c268; }
+.e-verde { background: rgba(46,158,107,.22); color: #6ee7a8; }
 .e-neutra { background: rgba(123,139,156,.18); color: var(--apagado); }
 
 .estado { font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
