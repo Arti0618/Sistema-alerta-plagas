@@ -72,6 +72,29 @@ async function asignar(plaga, parcela, momento) {
   return elegir(lista, plaga.especialidad, parcela.lat, parcela.lon);
 }
 
+/**
+ * Todos los técnicos que podrían atender el caso, ordenados por idoneidad.
+ * Sirve para que el coordinador pueda cambiar el técnico propuesto.
+ */
+async function candidatos(plaga, parcela, momento) {
+  if (!plaga || !parcela || parcela.lat == null || parcela.lon == null) return [];
+  const lista = await api.tecnicos(momento || parcela.momento || undefined);
+
+  return (lista || [])
+    .filter((t) => t.especialidad === plaga.especialidad && Number(t.carga || 0) < 5)
+    .map((t) => ({
+      ...t,
+      distancia_km: distanciaAlMetro(parcela.lat, parcela.lon, t.lat, t.lon),
+    }))
+    .sort((a, b) => {
+      if (a.distancia_km !== b.distancia_km) return a.distancia_km - b.distancia_km;
+      const cargaA = Number(a.carga || 0);
+      const cargaB = Number(b.carga || 0);
+      if (cargaA !== cargaB) return cargaA - cargaB;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+}
+
 /* ------------------------------------------------------------------ */
 /* Notificación al técnico                                             */
 /* ------------------------------------------------------------------ */
@@ -95,4 +118,4 @@ async function notificar(tecnico, consulta, parcela, plaga) {
   });
 }
 
-module.exports = { elegir, asignar, notificar, distanciaKm, distanciaAlMetro };
+module.exports = { elegir, asignar, candidatos, notificar, distanciaKm, distanciaAlMetro };

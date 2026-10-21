@@ -72,19 +72,63 @@ function tituloChat(chat) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* Botones en línea (para la aprobación del coordinador)               */
+/* ------------------------------------------------------------------ */
+
+/** Teclado de aprobación de un caso: Aprobar / Cambiar técnico. */
+function botonesAprobacion(reporteId) {
+  return {
+    inline_keyboard: [
+      [{ text: '✅ Aprobar', callback_data: `aprobar:${reporteId}` }],
+      [{ text: '🔁 Cambiar técnico', callback_data: `cambiar:${reporteId}` }],
+    ],
+  };
+}
+
+/** Teclado con la lista de técnicos candidatos para reasignar. */
+function botonesTecnicos(reporteId, tecnicos) {
+  const filas = tecnicos.slice(0, 10).map((t) => [
+    {
+      text: `${t.nombre} · ${t.especialidad === 'fitopatologia' ? 'fito' : 'ento'} · ${t.distancia_km} km · carga ${t.carga}`,
+      callback_data: `elegir:${reporteId}:${t.id}`,
+    },
+  ]);
+  filas.push([{ text: '↩️ Volver', callback_data: `volver:${reporteId}` }]);
+  return { inline_keyboard: filas };
+}
+
 module.exports = {
   llamar,
   describirMensaje,
   nombreRemitente,
   tituloChat,
+  botonesAprobacion,
+  botonesTecnicos,
   getMe: () => llamar('getMe'),
   eliminarWebhook: () => llamar('deleteWebhook', { drop_pending_updates: false }),
   enviarMensaje: (chatId, texto, extra = {}) =>
     llamar('sendMessage', { chat_id: chatId, text: texto, ...extra }),
+  editarMensaje: (chatId, messageId, texto, extra = {}) =>
+    llamar('editMessageText', { chat_id: chatId, message_id: messageId, text: texto, ...extra }),
+  editarTeclado: (chatId, messageId, teclado) =>
+    llamar('editMessageReplyMarkup', {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: teclado || { inline_keyboard: [] },
+    }),
+  responderCallback: (callbackId, texto, extra = {}) =>
+    llamar('answerCallbackQuery', { callback_query_id: callbackId, text: texto, ...extra }),
   getUpdates: (offset, timeout = 25) =>
     llamar('getUpdates', {
       offset,
       timeout,
-      allowed_updates: ['message', 'edited_message', 'channel_post', 'edited_channel_post'],
+      allowed_updates: [
+        'message',
+        'edited_message',
+        'channel_post',
+        'edited_channel_post',
+        'callback_query',
+      ],
     }),
 };

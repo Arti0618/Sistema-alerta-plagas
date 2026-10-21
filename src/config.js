@@ -81,6 +81,9 @@ const config = {
   avisarUrgentes: bandera('AVISAR_URGENTES', true),
   preguntarProductor: si('PREGUNTAR', 'auto').toLowerCase(), // auto | off
   registrarCasos: bandera('REGISTRAR_CASOS', true),
+  // Reto extra: el coordinador aprueba en Telegram (con botones) antes de que
+  // se le mande el folio al productor y el caso al técnico.
+  requiereAprobacion: bandera('APROBAR_ANTES_DE_AVISAR', true),
 
   // Rutas
   dataDir: path.join(ROOT, 'data'),

@@ -223,14 +223,25 @@ function renderConsultas() {
       punto.classList.add('punto--aviso');
       texto = 'Pendiente';
     }
+    // Estado de aprobación del coordinador (reto extra)
+    if (c.aprobacion_estado === 'pendiente') {
+      punto.className = 'punto punto--aviso';
+      texto = 'Por aprobar';
+    } else if (c.aprobacion_estado === 'aprobado') {
+      punto.className = 'punto punto--ok';
+      texto = 'Aprobado';
+    }
+
     estado.append(punto, document.createTextNode(texto));
 
     const avisos = [];
-    if (c.aviso_enviado) avisos.push('aviso enviado al coordinador');
+    if (c.brote === true) avisos.push(`brote detectado (${c.brote_cuenta || '3+'} casos cerca)`);
+    if (c.aviso_enviado) avisos.push('aviso registrado para el coordinador');
     if (c.telegram_enviado) avisos.push('alerta enviada por Telegram');
     if (c.sanidad_avisada) avisos.push('sanidad vegetal avisada');
     if (c.pregunta_enviada) avisos.push('pregunta enviada al productor');
-    if (c.brote === true) avisos.push('brote detectado');
+    if (c.aprobacion_estado === 'pendiente') avisos.push('esperando aprobación del coordinador');
+    if (c.aprobacion_estado === 'aprobado') avisos.push('aprobado por el coordinador');
     if (avisos.length) estado.title = avisos.join(' · ');
 
     fila.append(estado);
@@ -321,9 +332,26 @@ function renderDetalle() {
     pre.textContent = JSON.stringify(c.resultado, null, 2);
     cuerpo.append(dato('Respuesta de la API', pre));
   }
-  cuerpo.append(dato('Aviso al coordinador', c.aviso_enviado ? 'Sí' : 'No'));
-  cuerpo.append(dato('Aviso por Telegram', c.telegram_enviado ? 'Sí' : 'No'));
-  cuerpo.append(dato('Pregunta al productor', c.pregunta_enviada ? c.pregunta || 'Sí' : 'No'));
+  // Avisos y aprobación del coordinador (retos extra)
+  cuerpo.append(dato('Aviso registrado para el coordinador', c.aviso_enviado ? 'Sí' : 'No'));
+  cuerpo.append(dato('Alerta por Telegram', c.telegram_enviado ? 'Sí' : 'No'));
+  if (c.sanidad_avisada) cuerpo.append(dato('Sanidad vegetal avisada', 'Sí'));
+  if (c.pregunta_enviada) cuerpo.append(dato('Pregunta al productor', c.pregunta || 'Sí'));
+  if (c.aprobacion_estado) {
+    cuerpo.append(
+      dato(
+        'Aprobación del coordinador',
+        c.aprobacion_estado === 'aprobado'
+          ? `Aprobado${c.aprobacion_por ? ` por ${c.aprobacion_por}` : ''}`
+          : c.aprobacion_estado === 'pendiente'
+            ? 'Pendiente de aprobación'
+            : 'Aviso automático (sin aprobación)',
+      ),
+    );
+  }
+  if (c.tecnico_cambiado_por) {
+    cuerpo.append(dato('Técnico cambiado por', c.tecnico_cambiado_por));
+  }
   if (c.error) cuerpo.append(dato('Error', c.error));
 
   els.btnReprocesar.disabled = c.fuente !== 'api';

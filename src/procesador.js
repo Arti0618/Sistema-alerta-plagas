@@ -18,6 +18,7 @@ const telegram = require('./telegram');
 const tecnicos = require('./tecnicos');
 const brotes = require('./brotes');
 const derivados = require('./derivados');
+const aprobaciones = require('./aprobaciones');
 const store = require('./store');
 const { dormir } = require('./gemini');
 
@@ -547,27 +548,35 @@ async function procesarReporte(reporte, { reintento = false, registrar = true } 
     let avisoOk = false;
     let telegramOk = false;
 
-    if (consulta.tecnico_id) {
-      try {
-        await tecnicos.notificar(calc.tecnico, consulta, parcela, plaga);
-        store.incrementarMetrica('tecnicos_asignados');
-      } catch (err) {
-        console.error(`[tecnico] ${reporte.id} no se pudo notificar: ${err.message}`);
-      }
-    }
-
+    // 2a) Deja constancia del aviso en la API (lo ve el coordinador).
     try {
       await avisarPorAPI(consulta);
       avisoOk = true;
     } catch (err) {
       console.error(`[avisos] ${reporte.id} falló: ${err.message}`);
     }
-    try {
-      telegramOk = await avisarPorTelegram(consulta);
-    } catch (err) {
-      console.error(`[avisos] Telegram ${reporte.id} falló: ${err.message}`);
+
+    // 2b) Alerta al coordinador por Telegram.
+    //   Con aprobación activada llega con botones «Aprobar» / «Cambiar técnico»
+    //   y el folio al productor y el caso al técnico quedan en espera.
+    const destino = chatDelCoordinador();
+    if (destino) {
+      try {
+        if (config.requiereAprobacion) {
+          await aprobaciones.solicitar(consulta, destino);
+        } else {
+          await telegram.enviarMensaje(destino, textoAviso(consulta));
+          await aprobaciones.enviarAvisos(consulta);
+          store.incrementarMetrica('tecnicos_asignados');
+        }
+        telegramOk = true;
+      } catch (err) {
+        console.error(`[avisos] Telegram ${reporte.id} falló: ${err.message}`);
+      }
     }
 
+    // 2c) Cuarentenaria: a sanidad vegetal se le avisa DE INMEDIATO, sin esperar
+    //     la aprobación (la regla lo pide así).
     let sanidadOk = false;
     if (consulta.cuarentenaria) {
       try {
@@ -582,6 +591,7 @@ async function procesarReporte(reporte, { reintento = false, registrar = true } 
       aviso_enviado: avisoOk,
       telegram_enviado: telegramOk,
       sanidad_avisada: sanidadOk,
+      aprobacion_estado: config.requiereAprobacion ? 'pendiente' : 'automatico',
     });
   }
 
@@ -834,7 +844,115 @@ async function responderEnTelegram(chatId, textoUsuario, msg) {
   return interpretacion.respuesta;
 }
 
+/**
+ * Reto extra: el coordinador pulsa un botón en Telegram.
+ * Datos posibles del botón:  aprobar:<id> · cambiar:<id> ·
+ *                            elegir:<id>:<tecnico> · volver:<id>
+ */
+async function manejarCallback(cq) {
+  const datos = String(cq.data || '');
+  const [accion, reporteId, tecnicoId] = datos.split(':');
+  const chatId = String(cq.message?.chat?.id ?? '');
+  const msgId = cq.message?.message_id;
+  const quien = (cq.from?.first_name || 'coordinador').trim();
+
+  const responder = (texto) =>
+    telegram.responderCallback(cq.id, texto).catch(() => {});
+
+  const consulta = reporteId ? store.obtenerConsulta(reporteId) : null;
+  if (!consulta) return responder('Ese caso ya no está disponible.');
+
+  try {
+    if (accion === 'aprobar') {
+      const r = await aprobaciones.aprobar(consulta, quien);
+      if (!r.ok) return responder(r.motivo);
+
+      store.incrementarMetrica('aprobaciones');
+      if (consulta.tecnico_id) store.incrementarMetrica('tecnicos_asignados');
+      console.log(`[aprobacion] ${reporteId} aprobado por ${quien}`);
+
+      await telegram.editarMensaje(
+        chatId,
+        msgId,
+        `${aprobaciones.resumenCaso(consulta)}\n\n✅ APROBADO por ${quien}\n` +
+          `· Folio al productor: ${r.resultados.productor ? 'enviado' : 'no se pudo'}\n` +
+          `· Aviso al técnico: ${r.resultados.tecnico ? 'enviado' : 'no se pudo'}\n` +
+          (r.resultados.vecinos ? `· Vecinos avisados: ${r.resultados.vecinos}\n` : '') +
+          (r.resultados.sanidad ? '· Sanidad vegetal avisada\n' : ''),
+      );
+      return responder('Caso aprobado');
+    }
+
+    if (accion === 'cambiar') {
+      const plaga = agente.porId(consulta.plaga);
+      const parcela = cache.parcelas.get(consulta.parcela_id);
+      if (!plaga || !parcela) return responder('No se puede recalcular el técnico.');
+
+      const lista = await tecnicos.candidatos(plaga, parcela, consulta.recibido);
+      if (!lista.length) return responder('No hay otros técnicos disponibles.');
+
+      await telegram.editarMensaje(
+        chatId,
+        msgId,
+        `${aprobaciones.resumenCaso(consulta)}\n\n🔁 Elige al técnico que atenderá el caso:`,
+        { reply_markup: telegram.botonesTecnicos(reporteId, lista) },
+      );
+      return responder('Elige un técnico');
+    }
+
+    if (accion === 'elegir') {
+      const elegido = (await tecnicos.candidatos(
+        agente.porId(consulta.plaga),
+        cache.parcelas.get(consulta.parcela_id),
+        consulta.recibido,
+      )).find((t) => t.id === tecnicoId);
+
+      if (!elegido) return responder('Ese técnico ya no está disponible.');
+
+      store.actualizarConsulta(reporteId, {
+        tecnico_id: elegido.id,
+        tecnico_nombre: elegido.nombre,
+        tecnico_distancia_km: elegido.distancia_km,
+        tecnico_cambiado_por: quien,
+      });
+      console.log(`[aprobacion] ${reporteId}: técnico cambiado a ${elegido.id} por ${quien}`);
+
+      const r = await aprobaciones.aprobar(consulta, quien);
+      await telegram.editarMensaje(
+        chatId,
+        msgId,
+        `${aprobaciones.resumenCaso(consulta)}\n\n✅ APROBADO por ${quien} · técnico ${
+          elegido.nombre
+        } (${elegido.id})\n` +
+          `· Folio al productor: ${r.ok && r.resultados.productor ? 'enviado' : 'no se pudo'}\n` +
+          `· Aviso al técnico: ${r.ok && r.resultados.tecnico ? 'enviado' : 'no se pudo'}`,
+      );
+      return responder('Técnico cambiado y caso aprobado');
+    }
+
+    if (accion === 'volver') {
+      await telegram.editarMensaje(
+        chatId,
+        msgId,
+        `${aprobaciones.resumenCaso(consulta)}\n\n⏳ Pendiente de tu aprobación.`,
+        { reply_markup: telegram.botonesAprobacion(reporteId) },
+      );
+      return responder('De vuelta al caso');
+    }
+
+    return responder('Acción no reconocida');
+  } catch (err) {
+    console.error(`[aprobacion] error al procesar ${datos}: ${err.message}`);
+    return responder(`Error: ${err.message}`.slice(0, 180));
+  }
+}
+
 async function manejarUpdate(update) {
+  if (update.callback_query) {
+    await manejarCallback(update.callback_query);
+    return;
+  }
+
   const msg =
     update.message || update.edited_message || update.channel_post || update.edited_channel_post;
   if (!msg || !msg.chat) return;

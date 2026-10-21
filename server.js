@@ -144,6 +144,8 @@ function resumenConsulta(c) {
     brote: c.brote ?? null,
     es_seguimiento: Boolean(c.es_seguimiento),
     porcentaje: c.porcentaje ?? null,
+    brote_cuenta: c.brote_cuenta ?? null,
+    aprobacion_estado: c.aprobacion_estado || null,
     confianza: c.confianza,
     modelo: c.modelo || null,
     es_respuesta: Boolean(c.es_respuesta),
