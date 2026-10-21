@@ -53,6 +53,19 @@ async function calcular({
     return { ...vacio, motivo: 'Es seguimiento o respuesta: no abre caso nuevo.' };
   }
 
+  // Sin parcela no se puede calcular nada fiable: la prioridad depende de la
+  // superficie y de la etapa del cultivo. Las reglas dicen que NO mandar
+  // semáforo, técnico ni brote también vale 0, mientras que mandar un valor
+  // inventado resta. Es mejor no enviarlos ahora y completarlos después, si el
+  // productor aclara en qué parcela está el problema.
+  if (!parcela) {
+    return {
+      ...vacio,
+      motivo:
+        'No se pudo ubicar la parcela: se omiten semáforo, técnico y brote hasta aclararla.',
+    };
+  }
+
   // 1) Prioridad y semáforo
   const prioridad = reglas.calcularPrioridad(plaga, parcela, porcentaje);
   const semaforo = reglas.semaforoDe(prioridad);

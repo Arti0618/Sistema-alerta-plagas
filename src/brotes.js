@@ -95,9 +95,12 @@ function casosPropiosValidos(consultas, parcelasPorId) {
       if (!c.plaga || c.plaga === 'desconocida') return false;
       // Las respuestas a preguntas nunca son casos.
       if (c.es_respuesta === true) return false;
-      // La API nos dice si fue un caso nuevo (maximo 4) o un seguimiento (2).
+      // La API nos dice, en «maximo», cuánto vale ese mensaje: un caso nuevo
+      // vale hasta 5 puntos (4 en el Nivel 1, cuando no se calificaba el
+      // semáforo), un seguimiento 2 y un mensaje que no es reporte 1.
+      // Solo los casos nuevos cuentan para los brotes.
       if (c.resultado && typeof c.resultado.maximo === 'number') {
-        return c.resultado.maximo === 4;
+        return c.resultado.maximo >= 4;
       }
       // Sin respuesta de la API: exigimos que se haya registrado de verdad.
       return c.registrado === true && c.es_seguimiento !== true;
