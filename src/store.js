@@ -30,7 +30,16 @@ let estadoMem = {
   intentos: {},
   ultimoDesde: null,
   ultimoTechnicoCheck: null,
-  metricas: { procesados: 0, urgentes: 0, registrados: 0, errores: 0, brotes: 0, tecnicos_asignados: 0 },
+  metricas: {
+    procesados: 0,
+    urgentes: 0,
+    registrados: 0,
+    errores: 0,
+    brotes: 0,
+    tecnicos_asignados: 0,
+    aprobaciones: 0,
+    escalados: 0,
+  },
 };
 let telegramMem = { bot: null, offset: 0, chats: {}, messages: {} };
 

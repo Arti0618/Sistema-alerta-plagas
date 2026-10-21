@@ -19,6 +19,7 @@ const tecnicos = require('./tecnicos');
 const brotes = require('./brotes');
 const derivados = require('./derivados');
 const aprobaciones = require('./aprobaciones');
+const plazos = require('./plazos');
 const store = require('./store');
 const { dormir } = require('./gemini');
 
@@ -980,6 +981,27 @@ async function manejarUpdate(update) {
   }
 }
 
+/**
+ * Reto extra: escalado por plazos. Revisa cada cierto tiempo si algún caso
+ * abierto pasó el plazo de su semáforo sin que un técnico haya registrado la
+ * visita, y lo escala al coordinador.
+ */
+async function buclePlazos() {
+  // Se espera un poco al arrancar para no competir con la carga inicial.
+  await dormir(60000);
+  while (activo) {
+    try {
+      const r = await plazos.revisar({ destino: chatDelCoordinador() });
+      if (r.escalados) {
+        console.log(`[plazos] ${r.escalados} caso(s) escalado(s) de ${r.revisados} revisados`);
+      }
+    } catch (err) {
+      console.error('[plazos] error al revisar:', err.message);
+    }
+    await dormir(config.intervaloPlazosMs);
+  }
+}
+
 async function bucleTelegram() {
   while (activo) {
     try {
@@ -1033,11 +1055,17 @@ async function iniciar() {
 
   bucleTelegram();
   if (config.procesarReportes) bucleReportes();
+  buclePlazos();
 }
 
 function detener() {
   activo = false;
   store.guardarTodo();
+}
+
+/** Revisa los plazos a mano (botón del panel). */
+async function revisarPlazos() {
+  return plazos.revisar({ destino: chatDelCoordinador() });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1075,6 +1103,7 @@ module.exports = {
   iniciar,
   detener,
   revisarReportes,
+  revisarPlazos,
   procesarReporte,
   responderEnTelegram,
   estadoSistema,

@@ -75,6 +75,8 @@ module.exports = {
   reportes: (desde, limite = 500) =>
     pedir(`/reportes?desde=${encodeURIComponent(desde)}&limite=${limite}`),
   avisos: (limite = 50) => pedir(`/avisos?limite=${limite}`),
+  visitas: (desde) =>
+    pedir(`/visitas${desde ? `?desde=${encodeURIComponent(desde)}` : ''}`),
 
   validarCaso: (caso) => pedir('/casos/validar', { metodo: 'POST', cuerpo: caso }),
   registrarCaso: (caso) => pedir('/casos', { metodo: 'POST', cuerpo: caso }),

@@ -54,6 +54,8 @@ const els = {
   textoPrueba: $('textoPrueba'),
   btnProbar: $('btnProbar'),
   resultadoPrueba: $('resultadoPrueba'),
+  btnPlazos: $('btnPlazos'),
+  resultadoPlazos: $('resultadoPlazos'),
   resultadoDiag: $('resultadoDiag'),
   configInfo: $('configInfo'),
 
@@ -223,8 +225,11 @@ function renderConsultas() {
       punto.classList.add('punto--aviso');
       texto = 'Pendiente';
     }
-    // Estado de aprobación del coordinador (reto extra)
-    if (c.aprobacion_estado === 'pendiente') {
+    // Retos extra: aprobación del coordinador y escalado por plazos
+    if (c.escalado) {
+      punto.className = 'punto punto--mal';
+      texto = 'Escalado';
+    } else if (c.aprobacion_estado === 'pendiente') {
       punto.className = 'punto punto--aviso';
       texto = 'Por aprobar';
     } else if (c.aprobacion_estado === 'aprobado') {
@@ -242,6 +247,7 @@ function renderConsultas() {
     if (c.pregunta_enviada) avisos.push('pregunta enviada al productor');
     if (c.aprobacion_estado === 'pendiente') avisos.push('esperando aprobación del coordinador');
     if (c.aprobacion_estado === 'aprobado') avisos.push('aprobado por el coordinador');
+    if (c.escalado) avisos.push(`escalado: ${c.escalado_horas_retraso ?? '?'} h sin visita`);
     if (avisos.length) estado.title = avisos.join(' · ');
 
     fila.append(estado);
@@ -697,6 +703,25 @@ els.btnDiag.addEventListener('click', () => {
   correrDiagnostico();
 });
 els.btnDiag2.addEventListener('click', correrDiagnostico);
+
+els.btnPlazos.addEventListener('click', async () => {
+  els.btnPlazos.disabled = true;
+  els.resultadoPlazos.textContent = 'Revisando…';
+  try {
+    const r = await enviarJson('/api/plazos');
+    const s = r.resumen || {};
+    els.resultadoPlazos.textContent = '';
+    els.resultadoPlazos.append(dato('Casos con semáforo revisados', s.revisados ?? 0));
+    els.resultadoPlazos.append(dato('Escalados ahora', s.escalados ?? 0));
+    if (s.error) els.resultadoPlazos.append(dato('Error', s.error));
+    aviso(s.escalados ? `${s.escalados} caso(s) escalados` : 'Ningún caso fuera de plazo', true);
+    refrescarPanel();
+  } catch (err) {
+    els.resultadoPlazos.textContent = `Error: ${err.message}`;
+  } finally {
+    els.btnPlazos.disabled = false;
+  }
+});
 els.btnProbar.addEventListener('click', probarAgente);
 
 els.chats.addEventListener('click', (ev) => {

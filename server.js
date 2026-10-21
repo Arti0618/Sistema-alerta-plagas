@@ -146,6 +146,8 @@ function resumenConsulta(c) {
     porcentaje: c.porcentaje ?? null,
     brote_cuenta: c.brote_cuenta ?? null,
     aprobacion_estado: c.aprobacion_estado || null,
+    escalado: Boolean(c.escalado),
+    escalado_horas_retraso: c.escalado_horas_retraso ?? null,
     confianza: c.confianza,
     modelo: c.modelo || null,
     es_respuesta: Boolean(c.es_respuesta),
@@ -170,6 +172,8 @@ function aplicarFiltro(items, url) {
   else if (filtro === 'plaga') salida = salida.filter((c) => c.es_plaga);
   else if (filtro === 'otras') salida = salida.filter((c) => !c.es_plaga);
   else if (filtro === 'seguimientos') salida = salida.filter((c) => c.es_seguimiento);
+  else if (filtro === 'escalados') salida = salida.filter((c) => c.escalado);
+  else if (filtro === 'pendientes') salida = salida.filter((c) => c.aprobacion_estado === 'pendiente');
   else if (filtro === 'registrado') salida = salida.filter((c) => c.registrado);
   else if (filtro === 'errores') salida = salida.filter((c) => c.estado === 'error' || c.error);
   else if (filtro === 'respuestas') salida = salida.filter((c) => c.es_respuesta);
@@ -210,6 +214,8 @@ async function getPanel(res, url) {
       cuarentenarias: todas.filter((c) => c.cuarentenaria).length,
       registradas: todas.filter((c) => c.registrado).length,
       errores: todas.filter((c) => c.estado === 'error' || c.error).length,
+      escalados: todas.filter((c) => c.escalado).length,
+      porAprobar: todas.filter((c) => c.aprobacion_estado === 'pendiente').length,
       filtradas: filtradas.length,
     },
     consultas: filtradas.slice(0, limite).map(resumenConsulta),
@@ -271,6 +277,11 @@ async function postLeido(req, res) {
 
 async function postRevisar(res) {
   const resumen = await procesador.revisarReportes({ forzar: true });
+  enviarJson(res, 200, { ok: true, resumen });
+}
+
+async function postPlazos(res) {
+  const resumen = await procesador.revisarPlazos();
   enviarJson(res, 200, { ok: true, resumen });
 }
 
@@ -404,6 +415,7 @@ const servidor = http.createServer(async (req, res) => {
     }
 
     if (pathname === '/api/revisar' && req.method === 'POST') return await postRevisar(res);
+    if (pathname === '/api/plazos' && req.method === 'POST') return await postPlazos(res);
     if (pathname === '/api/probar' && req.method === 'POST') return await postProbar(req, res);
     if (pathname === '/api/enviar' && req.method === 'POST') return await postEnviar(req, res);
     if (pathname === '/api/leido' && req.method === 'POST') return await postLeido(req, res);

@@ -58,6 +58,8 @@
           <button class="chip" data-filtro="plaga">Plagas</button>
           <button class="chip" data-filtro="otras">No son plaga</button>
           <button class="chip" data-filtro="seguimientos">Seguimientos</button>
+          <button class="chip" data-filtro="pendientes">Por aprobar</button>
+          <button class="chip" data-filtro="escalados">Escalados</button>
           <button class="chip" data-filtro="errores">Errores</button>
         </div>
         <input class="buscar" id="buscar" type="search" placeholder="Buscar por folio, productor, plaga, localidad…" autocomplete="off">
@@ -111,6 +113,17 @@
         <textarea id="textoPrueba" rows="3" placeholder="Ejemplo: Buenos días, en mi parcela de frijol las hojas se están poniendo amarillas y traen un polvo café rojizo por debajo."></textarea>
         <button class="btn btn--principal" id="btnProbar">Interpretar</button>
         <div id="resultadoPrueba" class="resultado"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Plazos de visita (reto extra)</h2>
+        <p class="apagado">
+          Cada semáforo tiene un plazo: rojo 24 h · naranja 48 h · amarillo 72 h · verde 7 días.
+          Si un caso lo pasa sin que un técnico registre la visita, se escala al coordinador.
+          Se revisa solo cada 10 minutos; este botón lo revisa ahora.
+        </p>
+        <button class="btn" id="btnPlazos">Revisar plazos ahora</button>
+        <div id="resultadoPlazos" class="resultado"></div>
       </div>
 
       <div class="panel">

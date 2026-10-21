@@ -74,6 +74,8 @@ const config = {
   // Ritmo
   intervaloReportesMs: Number(si('INTERVALO_REPORTES_MS', 60000)),
   ritmoMs: Number(si('RITMO_MS', 4500)),
+  // Cada cuánto se revisan los plazos de visita de los casos abiertos.
+  intervaloPlazosMs: Number(si('INTERVALO_PLAZOS_MS', 10 * 60 * 1000)),
 
   // Comportamiento automático
   procesarReportes: bandera('PROCESAR_REPORTES', true),
