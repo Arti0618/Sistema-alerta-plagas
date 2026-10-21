@@ -477,25 +477,63 @@ function proyectarMapa(puntos, ancho, alto) {
   // Zoom de las teselas para que su resolución coincida con la del dibujo.
   const zoom = Math.max(9, Math.min(17, Math.round(Math.log2(escala / 256))));
 
-  return { escala, minX, minY, maxX, maxY, offsetX, offsetY, aPixel, kmPorPixel, zoom, latCentro };
+  // Extensión de Mercator que cubre TODO el lienzo (no solo los datos). Sirve
+  // para pedir las teselas de las orillas y que no queden franjas vacías.
+  const canvasMinX = minX - offsetX / escala;
+  const canvasMaxX = minX + (ancho - offsetX) / escala;
+  const canvasMinY = minY - offsetY / escala;
+  const canvasMaxY = minY + (alto - offsetY) / escala;
+
+  return {
+    escala,
+    minX,
+    minY,
+    maxX,
+    maxY,
+    offsetX,
+    offsetY,
+    canvasMinX,
+    canvasMaxX,
+    canvasMinY,
+    canvasMaxY,
+    aPixel,
+    kmPorPixel,
+    zoom,
+    latCentro,
+  };
 }
 
-/** Teselas del mapa base que cubren el área visible. */
-function teselasDelMapa(proj) {
-  const z = proj.zoom;
+/**
+ * Teselas del mapa base que cubren la vista actual.
+ *
+ * El nivel de detalle (zoom) se recalcula con la vista, para que al acercarse
+ * se pidan teselas de más resolución en vez de estirar las mismas y verlas
+ * borrosas.
+ *
+ * @param {object} proj     proyección del lienzo
+ * @param {object} vista    {x, y, w, h} en unidades del lienzo
+ * @param {number} anchoPx  ancho real del marco, en píxeles
+ */
+function teselasDelMapa(proj, vista, anchoPx) {
+  // Escala efectiva: cuántos píxeles de pantalla hay por unidad de Mercator.
+  const pxPorUnidad = (anchoPx / vista.w) * proj.escala;
+
+  let z = Math.round(Math.log2(pxPorUnidad / 256));
+  z = Math.max(9, Math.min(18, z));
+
   const n = 2 ** z;
-  const lado = proj.escala / n; // tamaño de cada tesela, en píxeles
+  const lado = proj.escala / n; // tamaño de cada tesela, en unidades del lienzo
 
-  // Esquinas del área visible en coordenadas de Mercator.
-  const x0 = proj.minX;
-  const x1 = proj.maxX;
-  const y0 = proj.minY;
-  const y1 = proj.maxY;
+  // Región de Mercator que se está viendo.
+  const mX0 = proj.minX + (vista.x - proj.offsetX) / proj.escala;
+  const mX1 = proj.minX + (vista.x + vista.w - proj.offsetX) / proj.escala;
+  const mY0 = proj.minY + (vista.y - proj.offsetY) / proj.escala;
+  const mY1 = proj.minY + (vista.y + vista.h - proj.offsetY) / proj.escala;
 
-  const t0x = Math.max(0, Math.floor(x0 * n));
-  const t1x = Math.min(n - 1, Math.floor(x1 * n));
-  const t0y = Math.max(0, Math.floor(y0 * n));
-  const t1y = Math.min(n - 1, Math.floor(y1 * n));
+  const t0x = Math.max(0, Math.floor(mX0 * n));
+  const t1x = Math.min(n - 1, Math.floor(mX1 * n));
+  const t0y = Math.max(0, Math.floor(mY0 * n));
+  const t1y = Math.min(n - 1, Math.floor(mY1 * n));
 
   const lista = [];
   for (let tx = t0x; tx <= t1x; tx++) {
@@ -571,7 +609,19 @@ function zoomEn(clientX, clientY, factor) {
 
   // Si vuelve a verse todo, se limpia la ventana (así el botón ⟲ se apaga).
   S.mapaVista = w >= t.ancho - 0.5 ? null : { x, y, w, h };
-  aplicarVista();
+  // Se redibuja para pedir las teselas del nivel de detalle que toca.
+  pedirRedibujo();
+}
+
+// Redibujar en el siguiente cuadro: el zoom con la rueda dispara muchos
+// eventos seguidos y no tiene sentido rehacer el mapa en cada uno.
+let redibujoTimer = null;
+function pedirRedibujo() {
+  if (redibujoTimer) return;
+  redibujoTimer = requestAnimationFrame(() => {
+    redibujoTimer = null;
+    renderMapa();
+  });
 }
 
 function zoomCentro(factor) {
@@ -611,7 +661,7 @@ window.addEventListener('mousemove', (e) => {
   y = Math.max(0, Math.min(t.alto - arrastre.vista.h, y));
 
   S.mapaVista = { ...arrastre.vista, x, y };
-  aplicarVista();
+  pedirRedibujo();
 });
 
 window.addEventListener('mouseup', () => {
@@ -622,14 +672,14 @@ window.addEventListener('mouseup', () => {
 
 els.mapa.addEventListener('dblclick', () => {
   S.mapaVista = null;
-  aplicarVista();
+  pedirRedibujo();
 });
 
 els.zoomMas.addEventListener('click', () => zoomCentro(1.4));
 els.zoomMenos.addEventListener('click', () => zoomCentro(1 / 1.4));
 els.zoomReset.addEventListener('click', () => {
   S.mapaVista = null;
-  aplicarVista();
+  pedirRedibujo();
 });
 
 function mostrarTip(evento, html) {
@@ -668,20 +718,15 @@ function renderMapa() {
     return;
   }
 
-  // El lienzo se adapta a la forma real de la zona: la región de Texcoco es
-  // más alta que ancha, así que un mapa apaisado dejaría los datos como una
-  // tira angosta en el centro.
-  const lats = validos.map((p) => p.lat);
-  const lons = validos.map((p) => p.lon);
-  const latCentroZona = (Math.min(...lats) + Math.max(...lats)) / 2;
-  const altoKm = Math.max(0.5, (Math.max(...lats) - Math.min(...lats)) * MAPA.kmPorGrado);
-  const anchoKm = Math.max(
-    0.5,
-    (Math.max(...lons) - Math.min(...lons)) * MAPA.kmPorGrado * Math.cos((latCentroZona * Math.PI) / 180),
-  );
+  // El lienzo toma la MISMA proporción que el marco. Así el mapa base (las
+  // teselas) cubre todo el recuadro y no quedan franjas vacías a los lados.
+  const marco = els.mapa.parentElement;
+  const anchoPx = marco.clientWidth || 0;
+  const altoPx = marco.clientHeight || 0;
+  const aspectoMarco = anchoPx > 50 && altoPx > 50 ? anchoPx / altoPx : 16 / 9;
 
-  const ancho = 900;
-  const alto = Math.max(360, Math.min(1000, Math.round((ancho * altoKm) / anchoKm)));
+  const ancho = 1000;
+  const alto = Math.max(300, Math.round(ancho / aspectoMarco));
 
   // El lienzo cambia cuando llegan casos nuevos: si el usuario estaba
   // acercado, se conserva el zoom pero se mete dentro de los nuevos límites.
@@ -707,9 +752,10 @@ function renderMapa() {
   const fondo = svgEl('rect', { x: 0, y: 0, width: ancho, height: alto, fill: '#0e1621' });
   svg.append(fondo);
 
+  const vista = vistaActual();
   if (els.capaBase.checked) {
     const g = svgEl('g');
-    for (const t of teselasDelMapa(proj)) {
+    for (const t of teselasDelMapa(proj, vista, marco.clientWidth || 1000)) {
       const img = svgEl('image', {
         href: t.url,
         x: t.x,
@@ -1300,3 +1346,12 @@ setInterval(refrescarMensajes, 2500);
 setInterval(() => {
   if (S.vista === 'mapa') refrescarMapa();
 }, 10000);
+
+// Al cambiar el tamaño de la ventana hay que rehacer el lienzo, porque su
+// proporción depende del marco.
+let redimensionTimer = null;
+window.addEventListener('resize', () => {
+  if (S.vista !== 'mapa') return;
+  clearTimeout(redimensionTimer);
+  redimensionTimer = setTimeout(renderMapa, 250);
+});
