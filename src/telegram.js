@@ -137,8 +137,11 @@ module.exports = {
 
   /**
    * URL de descarga de un archivo ya resuelto con getFile.
-   * Contiene el token del bot: NUNCA debe registrarse ni guardarse.
+   *
+   * Telegram exige el orden `/file/bot<TOKEN>/<file_path>` (distinto de los
+   * endpoints normales, que son `/bot<TOKEN>/<metodo>`). Por eso no se usa
+   * base() aquí. Contiene el token: NUNCA debe registrarse ni guardarse.
    */
   urlArchivo: (filePath) =>
-    `${base()}/file/${String(filePath).replace(/^\/+/, '')}`,
+    `https://api.telegram.org/file/bot${config.telegramToken}/${String(filePath).replace(/^\/+/, '')}`,
 };
