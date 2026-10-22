@@ -27,6 +27,9 @@ const vision = require('./vision');
 // Updates de Telegram ya atendidos en este proceso (además del offset).
 const UPDATES_VISTOS = new Set();
 
+// Reportes ya registrados en esta sesión (protección extra ante fallos de guardado).
+const REGISTRADOS_SESION = new Set();
+
 let activo = false;
 let ocupado = false;
 
@@ -390,8 +393,14 @@ async function procesarReporte(reporte, { reintento = false, registrar = true } 
 
   const adjuntos = await descargarAdjuntos(reporte);
 
+  // El texto del reporte puede venir en `texto` o, en fotos, en `caption`.
+  const textoReporte =
+    (reporte.texto && String(reporte.texto).trim()) ||
+    (reporte.caption && String(reporte.caption).trim()) ||
+    '';
+
   const interpretacion = await agente.interpretar({
-    texto: reporte.texto,
+    texto: textoReporte,
     tipoMensaje: reporte.tipo,
     contexto,
     adjuntos,
@@ -412,10 +421,9 @@ async function procesarReporte(reporte, { reintento = false, registrar = true } 
   }
 
   // Se captura ANTES de reemplazar la consulta en el store: si es un reintento
-  // (botón «Reprocesar con IA»), aquí está la versión anterior, con su estado
-  // real de "registrado". Si se consultara después de agregarConsulta(), ya
-  // estaría pisada por la nueva y siempre parecería "no registrado".
-  const previa = reintento ? store.obtenerConsulta(reporte.id) : null;
+  // o una segunda pasada del mismo reporte, aquí está la versión anterior con
+  // su estado real de "registrado".
+  const previa = store.obtenerConsulta(reporte.id);
   const yaRegistrado = Boolean(previa && previa.registrado);
 
   // Reglas del nivel 2 (sin IA)
@@ -452,7 +460,7 @@ async function procesarReporte(reporte, { reintento = false, registrar = true } 
     lon: parcela ? parcela.lon : reporte.lon ?? null,
 
     tipo_mensaje: reporte.tipo,
-    texto: reporte.texto || '',
+    texto: textoReporte,
     transcripcion: interpretacion.transcripcion,
     descripcion_adjunto: interpretacion.descripcion_adjunto,
     audio_url: reporte.audio_url || null,
@@ -522,7 +530,13 @@ async function procesarReporte(reporte, { reintento = false, registrar = true } 
   }
 
   // 1) Registrar en la API
-  if (config.registrarCasos && registrar && !yaRegistrado && !esRespuesta) {
+  if (
+    config.registrarCasos &&
+    registrar &&
+    !yaRegistrado &&
+    !esRespuesta &&
+    !REGISTRADOS_SESION.has(reporte.id)
+  ) {
     const caso = derivados.construirCaso({
       reporteId: reporte.id,
       esPlaga: interpretacion.es_plaga,
@@ -533,6 +547,9 @@ async function procesarReporte(reporte, { reintento = false, registrar = true } 
     try {
       await api.validarCaso(caso);
       const resultado = await api.registrarCaso(caso);
+      // Se anota en memoria antes de guardar: si el guardado falla, un
+      // reintento dentro de esta sesión no volvería a registrar el caso.
+      REGISTRADOS_SESION.add(reporte.id);
       store.actualizarConsulta(reporte.id, { registrado: true, resultado, caso });
       store.incrementarMetrica('registrados');
       console.log(
