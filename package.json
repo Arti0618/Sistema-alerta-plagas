@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "configurar": "node configurar.js",
-    "test": "node --test pruebas-nivel2/*.test.js"
+    "test": "node --test pruebas-nivel2/*.test.js pruebas-telegram/*.test.js"
   },
   "engines": {
     "node": ">=18"

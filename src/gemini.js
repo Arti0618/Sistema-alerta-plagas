@@ -49,7 +49,7 @@ function anotarExito(modelo) {
  * @param {number} [opciones.temperatura]
  * @param {number} [opciones.reintentos]
  */
-async function generar({ sistema, partes, esquema, temperatura = 0.2, reintentos = 2 }) {
+async function generar({ sistema, partes, esquema, temperatura = 0.2, reintentos = 2, modelos }) {
   if (!config.geminiKey) {
     throw new GeminiError('Falta GEMINI_API_KEY en el archivo .env');
   }
@@ -66,8 +66,10 @@ async function generar({ sistema, partes, esquema, temperatura = 0.2, reintentos
 
   let ultimoError = null;
 
+  const cadena = Array.isArray(modelos) && modelos.length ? modelos : ordenDeModelos();
+
   // Cadena de respaldo: si un modelo está saturado o ya no existe, se prueba el siguiente.
-  for (const modelo of ordenDeModelos()) {
+  for (const modelo of cadena) {
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/${modelo}` +
       `:generateContent?key=${encodeURIComponent(config.geminiKey)}`;

@@ -87,6 +87,12 @@ const config = {
   // se le mande el folio al productor y el caso al técnico.
   requiereAprobacion: bandera('APROBAR_ANTES_DE_AVISAR', true),
 
+  // Análisis visual de fotografías de Telegram (preliminar, nunca confirmatorio).
+  visionHabilitado: bandera('VISION_ENABLED', true),
+  visionMaxBytes: Number(si('VISION_MAX_BYTES', 5 * 1024 * 1024)),
+  visionTimeoutMs: Number(si('VISION_TIMEOUT_MS', 15000)),
+  visionMaxPorChat: Number(si('VISION_MAX_POR_CHAT', 5)),
+
   // Rutas
   dataDir: path.join(ROOT, 'data'),
   publicDir: path.join(ROOT, 'public'),
@@ -107,6 +113,21 @@ config.usaSupabase = Boolean(config.supabaseUrl && config.supabaseKey);
 config.modelos = [
   ...new Set(
     [config.geminiModel, ...config.geminiAlternos.split(',')]
+      .map((m) => m.trim())
+      .filter(Boolean),
+  ),
+];
+
+/** Modelo multimodal para fotografías (por defecto, el mismo de texto). */
+config.visionModel = si('VISION_MODEL', config.geminiModel);
+/**
+ * Cadena de modelos para imágenes. Solo se permiten modelos multimodales:
+ * los respaldos se declaran explícitamente con VISION_MODELOS_ALTERNOS y NUNCA
+ * se usa la cadena de texto (podría no aceptar inline_data).
+ */
+config.visionModelos = [
+  ...new Set(
+    [config.visionModel, ...si('VISION_MODELOS_ALTERNOS', '').split(',')]
       .map((m) => m.trim())
       .filter(Boolean),
   ),

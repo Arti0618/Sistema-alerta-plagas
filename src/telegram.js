@@ -131,4 +131,14 @@ module.exports = {
         'callback_query',
       ],
     }),
+
+  /** Metadatos de un archivo (incluye file_path). No registra ni expone la URL. */
+  getFile: (fileId) => llamar('getFile', { file_id: fileId }),
+
+  /**
+   * URL de descarga de un archivo ya resuelto con getFile.
+   * Contiene el token del bot: NUNCA debe registrarse ni guardarse.
+   */
+  urlArchivo: (filePath) =>
+    `${base()}/file/${String(filePath).replace(/^\/+/, '')}`,
 };
