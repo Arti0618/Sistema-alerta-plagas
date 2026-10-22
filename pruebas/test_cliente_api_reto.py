@@ -10,8 +10,11 @@ from agente.cliente_api_reto import (
     ErrorModoSeguro,
     ErrorValidacionCaso,
     extraer_texto_reporte,
+    normalizar_casos_previos,
     normalizar_catalogo_plagas,
+    normalizar_parcelas,
     normalizar_reporte,
+    normalizar_tecnicos,
 )
 from pruebas.ayudas_simuladas import (
     TOKEN_FICTICIO,
@@ -70,6 +73,10 @@ class ClienteApiRetoTests(unittest.TestCase):
                     "sintomas": [],
                     "severidad": None,
                     "cuarentenaria": False,
+                    "tipo": None,
+                    "especialidad": None,
+                    "etapas_criticas": {},
+                    "etapas_susceptibles": {},
                 },
                 {
                     "id": 2,
@@ -79,6 +86,10 @@ class ClienteApiRetoTests(unittest.TestCase):
                     "sintomas": [],
                     "severidad": None,
                     "cuarentenaria": False,
+                    "tipo": None,
+                    "especialidad": None,
+                    "etapas_criticas": {},
+                    "etapas_susceptibles": {},
                 },
             ],
         )
@@ -169,6 +180,298 @@ class ClienteApiRetoTests(unittest.TestCase):
             http.llamadas[0]["url"],
             "https://api.reto.test/base/reportes",
         )
+
+    def test_normalizar_tecnicos_acepta_envolturas_y_normaliza(self):
+        tecnicos = normalizar_tecnicos(
+            {
+                "tecnicos": [
+                    {
+                        "id": "tec-1",
+                        "nombre": " Ana ",
+                        "especialidades": "maíz",
+                        "casos_activos": 2,
+                        "capacidad_maxima_casos": 5,
+                        "disponible": "true",
+                    },
+                    {
+                        "tecnico_id": 7,
+                        "descripcion": "Riego",
+                    },
+                    {"nombre": "Sin ID"},
+                    "invalido",
+                ]
+            }
+        )
+
+        self.assertEqual(
+            tecnicos,
+            [
+                {
+                    "id": "tec-1",
+                    "nombre": "Ana",
+                    "especialidades": ["maíz"],
+                    "casos_activos": 2,
+                    "capacidad_maxima_casos": 5,
+                    "disponible": True,
+                    "base": None,
+                    "lat": None,
+                    "lon": None,
+                },
+                {
+                    "id": 7,
+                    "nombre": "Riego",
+                    "especialidades": [],
+                    "casos_activos": 0,
+                    "capacidad_maxima_casos": 0,
+                    "disponible": True,
+                    "base": None,
+                    "lat": None,
+                    "lon": None,
+                },
+            ],
+        )
+
+    def test_normalizar_tecnicos_acepta_esquema_real_de_la_api(self):
+        tecnicos = normalizar_tecnicos(
+            [
+                {
+                    "id": "T-01",
+                    "nombre": "Ing. Paola Cruz",
+                    "especialidad": "fitopatologia",
+                    "base": "Chapingo",
+                    "lat": 19.4935,
+                    "lon": -98.8905,
+                    "carga": 1,
+                    "tope": 5,
+                    "momento": "2026-10-20T21:47:58-06:00",
+                }
+            ]
+        )
+
+        self.assertEqual(
+            tecnicos,
+            [
+                {
+                    "id": "T-01",
+                    "nombre": "Ing. Paola Cruz",
+                    "especialidades": ["fitopatologia"],
+                    "casos_activos": 1,
+                    "capacidad_maxima_casos": 5,
+                    "disponible": True,
+                    "base": "Chapingo",
+                    "lat": 19.4935,
+                    "lon": -98.8905,
+                }
+            ],
+        )
+
+    def test_listar_tecnicos_envia_momento_como_parametro(self):
+        http = ClienteHttpFalso(
+            respuesta_get=RespuestaFalsa(
+                datos={"tecnicos": [{"id": "tec-1"}]}
+            )
+        )
+        cliente = ClienteApiReto(configuracion_reto(), cliente_http=http)
+
+        tecnicos = cliente.listar_tecnicos("2026-10-20T00:00:00Z")
+
+        self.assertEqual(tecnicos[0]["id"], "tec-1")
+        self.assertEqual(
+            http.llamadas[0]["url"],
+            "https://api.reto.test/base/tecnicos",
+        )
+        self.assertEqual(
+            http.llamadas[0]["params"],
+            {"momento": "2026-10-20T00:00:00Z"},
+        )
+
+    def test_listar_tecnicos_sin_momento_no_envia_parametros(self):
+        http = ClienteHttpFalso(
+            respuesta_get=RespuestaFalsa(datos=[])
+        )
+        cliente = ClienteApiReto(configuracion_reto(), cliente_http=http)
+
+        self.assertEqual(cliente.listar_tecnicos(), [])
+        self.assertIsNone(http.llamadas[0]["params"])
+
+    def test_normalizar_tecnicos_rechaza_respuesta_sin_lista(self):
+        with self.assertRaises(ErrorApiReto):
+            normalizar_tecnicos({"detalle": "sin técnicos"})
+
+    def test_normalizar_parcelas_acepta_esquema_real(self):
+        parcelas = normalizar_parcelas(
+            {
+                "parcelas": [
+                    {
+                        "id": "P-001",
+                        "productor_id": "PR-101",
+                        "nombre": "Tlacotepec",
+                        "municipio": "Texcoco",
+                        "localidad": "Texcoco",
+                        "cultivo": "maíz",
+                        "superficie_ha": 5.5,
+                        "etapa": "V10",
+                        "lat": 19.51046,
+                        "lon": -98.88248,
+                    },
+                    {
+                        "parcela_id": 2,
+                        "superficie_hectareas": "3,5",
+                    },
+                    {"nombre": "Sin ID"},
+                    "invalido",
+                ]
+            }
+        )
+
+        self.assertEqual(
+            parcelas,
+            [
+                {
+                    "id": "P-001",
+                    "productor_id": "PR-101",
+                    "nombre": "Tlacotepec",
+                    "municipio": "Texcoco",
+                    "localidad": "Texcoco",
+                    "cultivo": "maíz",
+                    "superficie_ha": 5.5,
+                    "etapa": "V10",
+                    "lat": 19.51046,
+                    "lon": -98.88248,
+                },
+                {
+                    "id": 2,
+                    "productor_id": None,
+                    "nombre": "",
+                    "municipio": "",
+                    "localidad": "",
+                    "cultivo": "",
+                    "superficie_ha": 3.5,
+                    "etapa": "",
+                    "lat": None,
+                    "lon": None,
+                },
+            ],
+        )
+
+    def test_normalizar_parcelas_rechaza_respuesta_sin_lista(self):
+        with self.assertRaises(ErrorApiReto):
+            normalizar_parcelas({"detalle": "sin parcelas"})
+
+    def test_normalizar_casos_previos_acepta_esquema_real(self):
+        casos = normalizar_casos_previos(
+            {
+                "casos": [
+                    {
+                        "reporte_id": "R-1001",
+                        "recibido": "2026-10-12T06:10:36-06:00",
+                        "productor_id": "PR-290",
+                        "parcela_id": "P-262",
+                        "cultivo": "avena",
+                        "plaga": "pulgon",
+                        "prioridad": 48,
+                        "semaforo": "amarillo",
+                        "brote": False,
+                        "tecnico_id": "T-06",
+                        "lat": 19.19428,
+                        "lon": -98.79053,
+                        "pct": 25,
+                    },
+                    {
+                        "id": "R-1009",
+                        "plaga_id": "mosquita_blanca",
+                        "prioridad": "32",
+                        "brote": "true",
+                    },
+                    {"sin": "id"},
+                ]
+            }
+        )
+
+        self.assertEqual(
+            casos,
+            [
+                {
+                    "reporte_id": "R-1001",
+                    "recibido": "2026-10-12T06:10:36-06:00",
+                    "productor_id": "PR-290",
+                    "parcela_id": "P-262",
+                    "cultivo": "avena",
+                    "plaga": "pulgon",
+                    "prioridad": 48,
+                    "semaforo": "amarillo",
+                    "brote": False,
+                    "tecnico_id": "T-06",
+                    "lat": 19.19428,
+                    "lon": -98.79053,
+                    "pct": 25.0,
+                },
+                {
+                    "reporte_id": "R-1009",
+                    "recibido": "",
+                    "productor_id": None,
+                    "parcela_id": None,
+                    "cultivo": "",
+                    "plaga": "mosquita_blanca",
+                    "prioridad": 32,
+                    "semaforo": None,
+                    "brote": True,
+                    "tecnico_id": None,
+                    "lat": None,
+                    "lon": None,
+                    "pct": None,
+                },
+            ],
+        )
+
+    def test_normalizar_casos_previos_rechaza_respuesta_sin_lista(self):
+        with self.assertRaises(ErrorApiReto):
+            normalizar_casos_previos({"detalle": "sin casos"})
+
+    def test_listar_parcelas_envia_productor_id(self):
+        http = ClienteHttpFalso(
+            respuesta_get=RespuestaFalsa(
+                datos={"parcelas": [{"id": "P-1", "cultivo": "maíz"}]}
+            )
+        )
+        cliente = ClienteApiReto(configuracion_reto(), cliente_http=http)
+
+        parcelas = cliente.listar_parcelas("PR-1")
+
+        self.assertEqual(parcelas[0]["id"], "P-1")
+        self.assertEqual(
+            http.llamadas[0]["url"],
+            "https://api.reto.test/base/parcelas",
+        )
+        self.assertEqual(
+            http.llamadas[0]["params"],
+            {"productor_id": "PR-1"},
+        )
+
+    def test_listar_casos_previos_usa_get_sin_parametros(self):
+        http = ClienteHttpFalso(
+            respuesta_get=RespuestaFalsa(
+                datos=[
+                    {
+                        "reporte_id": "R-1",
+                        "plaga": "pulgon",
+                        "prioridad": 48,
+                        "semaforo": "amarillo",
+                        "brote": False,
+                    }
+                ]
+            )
+        )
+        cliente = ClienteApiReto(configuracion_reto(), cliente_http=http)
+
+        casos = cliente.listar_casos_previos()
+
+        self.assertEqual(casos[0]["reporte_id"], "R-1")
+        self.assertEqual(
+            http.llamadas[0]["url"],
+            "https://api.reto.test/base/casos-previos",
+        )
+        self.assertIsNone(http.llamadas[0]["params"])
 
     def test_normalizar_reporte_acepta_campos_alternativos(self):
         normalizado = normalizar_reporte(

@@ -20,6 +20,10 @@ from agente.cliente_api_reto import (
     extraer_texto_reporte,
     normalizar_reporte,
 )
+from reglas.asignador_tecnicos import asignar_tecnico
+from reglas.brote import hay_brote
+from reglas.prioridad import calcular_prioridad
+from reglas.semaforo import calcular_semaforo
 
 
 class ErrorUrgencia(Exception):
@@ -124,16 +128,39 @@ def _plaga_desconocida():
         "sintomas": [],
         "severidad": None,
         "cuarentenaria": False,
+        "tipo": None,
+        "especialidad": None,
+        "etapas_criticas": {},
+        "etapas_susceptibles": {},
     }
 
 
-def construir_caso(reporte, clasificacion, urgente):
+def construir_caso(
+    reporte,
+    clasificacion,
+    urgente,
+    *,
+    semaforo=None,
+    tecnico_id=None,
+    prioridad=None,
+    brote=None,
+):
     """Construye el cuerpo exacto para /casos/validar y /casos.
 
-    El resultado contiene únicamente ``reporte_id``, ``es_plaga``,
-    ``plaga`` y ``urgente``. El clasificador devuelve ``plaga_id``, pero
-    la API recibe ese valor en ``plaga``. Si ``es_plaga`` es falso, el
-    campo ``plaga`` siempre vale ``"desconocida"``.
+    Campos siempre presentes:
+
+    - ``reporte_id``, ``es_plaga``, ``plaga`` y ``urgente``.
+
+    Campos opcionales de Nivel 2 (solo se incluyen si no son ``None``):
+
+    - ``semaforo``: uno de ``"rojo" | "naranja" | "amarillo" | "verde"``.
+    - ``tecnico_id``: identificador del tecnico asignado.
+    - ``prioridad``: numero ``0-100``.
+    - ``brote``: booleano de posible brote.
+
+    El clasificador devuelve ``plaga_id`` pero la API recibe ese valor en
+    ``plaga``. Si ``es_plaga`` es falso, el campo ``plaga`` siempre vale
+    ``"desconocida"``.
     """
 
     es_plaga = clasificacion.get("es_plaga")
@@ -158,12 +185,23 @@ def construir_caso(reporte, clasificacion, urgente):
     else:
         plaga = "desconocida"
 
-    return {
+    caso = {
         "reporte_id": reporte["id"],
         "es_plaga": es_plaga,
         "plaga": plaga,
         "urgente": urgente,
     }
+
+    if semaforo is not None:
+        caso["semaforo"] = semaforo
+    if tecnico_id is not None:
+        caso["tecnico_id"] = tecnico_id
+    if prioridad is not None:
+        caso["prioridad"] = prioridad
+    if brote is not None:
+        caso["brote"] = brote
+
+    return caso
 
 
 class ProcesadorReportes:
@@ -206,6 +244,20 @@ class ProcesadorReportes:
 
         reportes = self.cliente.listar_reportes(desde)
         catalogo = self.cliente.listar_plagas()
+
+        parcelas_por_id = {}
+        try:
+            for parcela in self.cliente.listar_parcelas():
+                parcelas_por_id[str(parcela["id"])] = parcela
+        except Exception:  # pylint: disable=broad-exception-caught
+            parcelas_por_id = {}
+
+        casos_conocidos = []
+        try:
+            casos_conocidos = list(self.cliente.listar_casos_previos())
+        except Exception:  # pylint: disable=broad-exception-caught
+            casos_conocidos = []
+
         resumen = ResumenProceso(
             modo_simulacion=self.configuracion.modo_simulacion
         )
@@ -277,13 +329,82 @@ class ProcesadorReportes:
 
                 urgente = self.calcular_urgencia(plaga=plaga)
                 _validar_urgente(urgente)
+
+                # Nivel 2: prioridad (severidad + superficie + etapa),
+                # semaforo, tecnico y brote. La parcela aporta superficie,
+                # etapa y cultivo. El tecnico se consulta en el momento
+                # exacto del reporte. Si algo falla, se degrada sin
+                # abortar el caso.
+                reporte_original = normalizado.get("original")
+                parcela = {}
+                if isinstance(reporte_original, dict):
+                    clave_parcela = reporte_original.get("parcela_id")
+                    if clave_parcela is not None:
+                        parcela = parcelas_por_id.get(
+                            str(clave_parcela),
+                            {},
+                        )
+
+                pct = None
+                if isinstance(reporte_original, dict):
+                    pct = reporte_original.get("pct")
+
+                cultivo = parcela.get("cultivo")
+                if not cultivo and isinstance(reporte_original, dict):
+                    cultivo = reporte_original.get("cultivo")
+
+                prioridad = calcular_prioridad(
+                    plaga,
+                    superficie_ha=parcela.get("superficie_ha"),
+                    etapa=parcela.get("etapa"),
+                    pct=pct,
+                    cultivo=cultivo,
+                )
+                semaforo = calcular_semaforo(prioridad)
+
+                tecnico_id = None
+                momento = None
+                if isinstance(reporte_original, dict):
+                    valor_momento = reporte_original.get("recibido")
+                    if isinstance(valor_momento, str) and valor_momento.strip():
+                        momento = valor_momento.strip()
+                try:
+                    tecnicos = self.cliente.listar_tecnicos(momento=momento)
+                    tecnico_id = asignar_tecnico(
+                        reporte_original,
+                        tecnicos,
+                        plaga,
+                    )
+                except Exception:  # pylint: disable=broad-exception-caught
+                    tecnico_id = None
+
+                lat = None
+                lon = None
+                if isinstance(reporte_original, dict):
+                    lat = reporte_original.get("lat")
+                    lon = reporte_original.get("lon")
+
+                caso_brote = {
+                    "reporte_id": normalizado["id"],
+                    "plaga": plaga.get("id"),
+                    "lat": lat,
+                    "lon": lon,
+                    "recibido": momento,
+                }
+                brote = hay_brote(caso_brote, casos_conocidos)
+
                 caso = construir_caso(
                     normalizado,
                     clasificacion,
                     urgente,
+                    semaforo=semaforo,
+                    tecnico_id=tecnico_id,
+                    prioridad=prioridad,
+                    brote=brote,
                 )
                 self.cliente.validar_caso(caso)
                 resumen.validados += 1
+                casos_conocidos.append(caso_brote)
             except Exception:
                 resumen.errores += 1
                 continue

@@ -80,13 +80,23 @@ class ClienteApiFalso:
         self,
         reportes=None,
         catalogo=None,
+        tecnicos=None,
+        parcelas=None,
+        casos_previos=None,
         error_validar=None,
         error_crear=None,
+        error_listar_tecnicos=None,
     ):
         self.reportes = reportes or []
         self.catalogo = catalogo or []
+        self.tecnicos = tecnicos if tecnicos is not None else []
+        self.parcelas = parcelas if parcelas is not None else []
+        self.casos_previos = (
+            casos_previos if casos_previos is not None else []
+        )
         self.error_validar = error_validar
         self.error_crear = error_crear
+        self.error_listar_tecnicos = error_listar_tecnicos
         self.llamadas = []
 
     def listar_reportes(self, desde):
@@ -96,6 +106,20 @@ class ClienteApiFalso:
     def listar_plagas(self):
         self.llamadas.append(("listar_plagas",))
         return self.catalogo
+
+    def listar_tecnicos(self, momento=None):
+        self.llamadas.append(("listar_tecnicos", momento))
+        if self.error_listar_tecnicos is not None:
+            raise self.error_listar_tecnicos
+        return self.tecnicos
+
+    def listar_parcelas(self, productor_id=None):
+        self.llamadas.append(("listar_parcelas", productor_id))
+        return self.parcelas
+
+    def listar_casos_previos(self):
+        self.llamadas.append(("listar_casos_previos",))
+        return self.casos_previos
 
     def validar_caso(self, caso):
         self.llamadas.append(("validar_caso", caso))

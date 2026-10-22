@@ -334,7 +334,9 @@ class ClasificadorOpenRouter:
                     "model": self.configuracion.modelo,
                     "messages": mensajes,
                     "temperature": 0,
-                    "max_tokens": 120,
+                    # Los modelos de razonamiento consumen parte del
+                    # presupuesto antes de emitir el JSON final.
+                    "max_tokens": 800,
                 },
             )
         except httpx.HTTPError as error:

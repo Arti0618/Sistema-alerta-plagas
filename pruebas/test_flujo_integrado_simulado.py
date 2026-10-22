@@ -66,6 +66,15 @@ class FlujoIntegradoSimuladoTests(unittest.TestCase):
                         ]
                     }
                 ),
+                "https://api.reto.test/base/parcelas": RespuestaFalsa(
+                    datos={"parcelas": []}
+                ),
+                "https://api.reto.test/base/casos-previos": RespuestaFalsa(
+                    datos=[]
+                ),
+                "https://api.reto.test/base/tecnicos": RespuestaFalsa(
+                    datos={"tecnicos": []}
+                ),
                 "https://api.reto.test/base/reportes": RespuestaFalsa(
                     datos={
                         "reportes": [
@@ -173,6 +182,10 @@ class FlujoIntegradoSimuladoTests(unittest.TestCase):
                         "sintomas": ["hojas perforadas"],
                         "severidad": "alta",
                         "cuarentenaria": True,
+                        "tipo": None,
+                        "especialidad": None,
+                        "etapas_criticas": {},
+                        "etapas_susceptibles": {},
                     }
                 }
             ],
@@ -198,11 +211,22 @@ class FlujoIntegradoSimuladoTests(unittest.TestCase):
                 "es_plaga": True,
                 "plaga": "plaga-1",
                 "urgente": True,
+                "semaforo": "rojo",
+                "prioridad": 100,
+                "brote": False,
             },
         )
         self.assertEqual(
             set(validaciones[0]["json"]),
-            {"reporte_id", "es_plaga", "plaga", "urgente"},
+            {
+                "reporte_id",
+                "es_plaga",
+                "plaga",
+                "urgente",
+                "semaforo",
+                "prioridad",
+                "brote",
+            },
         )
         self.assertIs(validaciones[0]["json"]["es_plaga"], True)
         self.assertIs(validaciones[0]["json"]["urgente"], True)

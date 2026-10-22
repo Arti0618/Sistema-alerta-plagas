@@ -22,7 +22,10 @@ envío de casos está bloqueado por defecto.
 
 - `GET /salud`
 - `GET /plagas`
+- `GET /parcelas`
 - `GET /reportes?desde=...`
+- `GET /tecnicos?momento=...`
+- `GET /casos-previos`
 - `POST /casos/validar`
 - `POST /casos` (solo con `ENVIAR_CASOS_REALES=true`)
 
@@ -69,10 +72,14 @@ datos no se imprimen ni se persisten automáticamente.
 - `severidad`
 - `cuarentenaria`
 
+Para Nivel 2 el cliente agrega `tipo`, `especialidad`, `etapas_criticas` y
+`etapas_susceptibles`. Las etapas se usan para la prioridad y la
+especialidad para asignar técnico; el clasificador no las recibe.
+
 `agente/clasificador_openrouter.py` usa únicamente `id`, `nombre`,
 `nombres_locales`, `cultivos` y `sintomas` para clasificar. No recibe ni
-decide `severidad` ni `cuarentenaria`; esos campos quedan reservados para
-la regla de urgencia.
+decide `severidad`, `cuarentenaria` ni la prioridad; esos campos quedan
+reservados para las reglas.
 
 ## Clasificación
 
@@ -89,25 +96,63 @@ inconsistentes como `es_plaga=false` con un ID del catálogo.
 
 ## Caso enviado
 
-El cuerpo construido por `agente/procesador_reto.py` es:
+El cuerpo construido por `agente/procesador_reto.py` incluye los cuatro
+campos base y los campos de Nivel 2:
 
 ```json
 {
   "reporte_id": "identificador-del-reporte",
   "es_plaga": true,
   "plaga": "id-exacto-o-desconocida",
-  "urgente": true
+  "urgente": true,
+  "semaforo": "amarillo",
+  "prioridad": 68,
+  "tecnico_id": "T-01",
+  "brote": false
 }
 ```
 
-El clasificador devuelve internamente `plaga_id`; el procesador lo
-transforma al campo `plaga` que exige la API. `es_plaga` y `urgente` son
-booleanos. Si `es_plaga` es falso, `plaga` siempre es `"desconocida"`.
-El cuerpo no incluye `plaga_id` ni el campo `urgencia`.
+`tecnico_id` se omite si no hay técnico disponible. El clasificador
+devuelve internamente `plaga_id`; el procesador lo transforma al campo
+`plaga` que exige la API. `es_plaga`, `urgente` y `brote` son booleanos.
+Si `es_plaga` es falso, `plaga` siempre es `"desconocida"`. El cuerpo no
+incluye `plaga_id` ni el campo `urgencia`.
 
 Primero se llama a `POST /casos/validar`. En modo seguro no se llama a
 `POST /casos`; por tanto tampoco se disparan notificaciones reales desde
 este flujo.
+
+## Reglas de Nivel 2
+
+La prioridad se calcula con tres componentes:
+
+- Severidad: `baja=15`, `media=25`, `alta=40`, `critica=50`.
+- Superficie: `round_comercial(superficie_ha * pct / 100 * 6.25)`, con
+  tope de 25 puntos. Si `pct` es `null`, se usa 10.
+- Etapa: 25 puntos si es crítica para el cultivo, 15 si es susceptible,
+  5 si es una etapa conocida no listada y 0 si no se conoce.
+
+Si `cuarentenaria=true`, la prioridad se fuerza a 100. El total se limita
+a 100.
+
+El semáforo se deriva de la prioridad: `rojo >= 85`, `naranja >= 70`,
+`amarillo >= 40`, `verde < 40`.
+
+Hay posible brote cuando existen 3 o más casos de la misma plaga a menos
+de 5 km en los últimos 7 días, contando el caso evaluado.
+
+El técnico se elige entre los especialistas de la plaga con carga menor
+a 5. Se toma la menor distancia Haversine, luego la menor carga y, al
+final, el identificador. Si no hay especialista disponible, se devuelve
+`null`.
+
+Para comparar estas reglas con `GET /casos-previos`:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\verificar_casos_previos.py
+```
+
+El script solo hace peticiones GET y exige `ENVIAR_CASOS_REALES=false`.
 
 ## Dependencia de urgencia
 

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Casos pendientes</title>
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <header class="barra">
+    <h1>Casos pendientes</h1>
+    <div class="acciones-barra">
+      <button id="boton-refrescar" class="boton">Refrescar</button>
+      <button id="boton-salir" class="boton">Salir</button>
+    </div>
+  </header>
+
+  <main>
+    <p id="estado-carga" class="estado">Cargando casos...</p>
+
+    <table id="tabla-casos" class="tabla" hidden>
+      <thead>
+        <tr>
+          <th>Prioridad</th>
+          <th>Semáforo</th>
+          <th>Recibido</th>
+          <th>Tipo</th>
+          <th>Resumen</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="cuerpo-tabla"></tbody>
+    </table>
+
+    <p id="sin-casos" class="estado" hidden>
+      No hay casos pendientes por revisar.
+    </p>
+  </main>
+
+  <script src="js/casos.js"></script>
+</body>
+</html>

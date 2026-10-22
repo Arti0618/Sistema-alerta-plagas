@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Detalle del caso</title>
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <header class="barra">
+    <h1>Detalle del caso</h1>
+    <div class="acciones-barra">
+      <a id="boton-volver" class="boton" href="casos.html">Volver</a>
+      <button id="boton-salir" class="boton">Salir</button>
+    </div>
+  </header>
+
+  <main>
+    <p id="estado-carga" class="estado">Cargando caso...</p>
+
+    <article id="detalle" class="tarjeta" hidden>
+      <section class="seccion">
+        <h2>Resumen del caso</h2>
+        <dl class="definiciones">
+          <dt>Prioridad</dt>
+          <dd id="caso-prioridad">—</dd>
+          <dt>Semáforo</dt>
+          <dd id="caso-semaforo">—</dd>
+          <dt>Estado</dt>
+          <dd id="caso-estado">—</dd>
+          <dt>Tiempo máximo</dt>
+          <dd id="caso-tiempo">—</dd>
+          <dt>Brote</dt>
+          <dd id="caso-brote">—</dd>
+          <dt>Duplicado</dt>
+          <dd id="caso-duplicado">—</dd>
+        </dl>
+      </section>
+
+      <section class="seccion">
+        <h2>Reporte original</h2>
+        <p id="reporte-tipo" class="etiqueta">—</p>
+        <p id="reporte-texto"></p>
+        <p id="reporte-archivo"></p>
+      </section>
+
+      <section class="seccion">
+        <h2>Interpretación de la IA</h2>
+        <dl class="definiciones">
+          <dt>¿Es reporte agrícola?</dt>
+          <dd id="ia-es-agricola">—</dd>
+          <dt>Cultivo</dt>
+          <dd id="ia-cultivo">—</dd>
+          <dt>Posible plaga</dt>
+          <dd id="ia-plaga">—</dd>
+          <dt>Nombre local</dt>
+          <dd id="ia-nombre-local">—</dd>
+          <dt>Confianza</dt>
+          <dd id="ia-confianza">—</dd>
+          <dt>Síntomas</dt>
+          <dd id="ia-sintomas">—</dd>
+          <dt>Datos faltantes</dt>
+          <dd id="ia-datos-faltantes">—</dd>
+        </dl>
+        <p id="ia-resumen" class="nota"></p>
+      </section>
+
+      <section class="seccion">
+        <h2>Técnico recomendado</h2>
+        <p id="tecnico-recomendado">—</p>
+        <p id="tecnico-justificacion" class="nota"></p>
+      </section>
+
+      <section class="seccion">
+        <h2>Decisión del coordinador</h2>
+        <textarea
+          id="comentario"
+          rows="3"
+          placeholder="Comentario opcional"
+        ></textarea>
+
+        <div class="acciones">
+          <button id="boton-aprobar" class="boton primario">
+            Aprobar técnico recomendado
+          </button>
+          <button id="boton-cambiar" class="boton">
+            Cambiar de técnico
+          </button>
+        </div>
+        <p id="resultado" class="resultado" hidden></p>
+      </section>
+
+      <section class="seccion" id="seccion-tecnicos" hidden>
+        <h2>Seleccionar técnico</h2>
+        <select id="selector-tecnico"></select>
+        <div class="acciones">
+          <button id="boton-confirmar-cambio" class="boton primario">
+            Confirmar cambio
+          </button>
+          <button id="boton-cancelar-cambio" class="boton">
+            Cancelar
+          </button>
+        </div>
+      </section>
+    </article>
+  </main>
+
+  <script src="js/detalle.js"></script>
+</body>
+</html>

@@ -6,6 +6,7 @@ se bloquea antes de construir o enviar cualquier solicitud.
 """
 
 import logging
+import math
 
 import httpx
 
@@ -19,7 +20,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 RUTAS_API = (
     "/salud",
     "/plagas",
+    "/parcelas",
     "/reportes",
+    "/tecnicos",
+    "/casos-previos",
     "/casos/validar",
     "/casos",
 )
@@ -123,13 +127,49 @@ def _normalizar_cuarentenaria(valor):
     return False
 
 
-def normalizar_catalogo_plagas(datos):
+def _normalizar_numero(valor):
+    if isinstance(valor, bool):
+        return None
+    if isinstance(valor, (int, float)):
+        return float(valor) if math.isfinite(valor) else None
+    if isinstance(valor, str):
+        try:
+            numero = float(valor.strip().replace(",", "."))
+        except ValueError:
+            return None
+        return numero if math.isfinite(numero) else None
+    return None
+
+
+def _normalizar_entero(valor):
+    numero = _normalizar_numero(valor)
+    return None if numero is None else int(numero)
+
+
+def _normalizar_mapa_etapas(valor):
+    """Normaliza un mapa ``cultivo -> [etapas]`` sin perder textos."""
+
+    if not isinstance(valor, dict):
+        return {}
+
+    mapa = {}
+    for cultivo, etapas in valor.items():
+        nombre = _normalizar_nombre(cultivo)
+        if not nombre:
+            continue
+        mapa[nombre] = _normalizar_lista_textos(etapas)
+    return mapa
+
+
+def normalizar_catalogo_plagas(datos, *, incluir_nivel2=False):
     """Devuelve el catálogo con todos los campos que usa el flujo.
 
     Cada plaga conserva ``id``, ``nombre``, ``nombres_locales``,
-    ``cultivos``, ``sintomas``, ``severidad`` y ``cuarentenaria``. Se
-    aceptan las envolturas habituales de la API (``plagas``, ``data`` o
-    ``items``), pero se exige que cada plaga tenga un identificador único
+    ``cultivos``, ``sintomas``, ``severidad`` y ``cuarentenaria``. Con
+    ``incluir_nivel2=True`` agrega ``tipo``, ``especialidad`` y los mapas
+    ``etapas_criticas``/``etapas_susceptibles``. Se aceptan las
+    envolturas habituales de la API (``plagas``, ``data`` o ``items``),
+    pero se exige que cada plaga tenga un identificador único
     y no vacío.
     """
 
@@ -172,27 +212,37 @@ def normalizar_catalogo_plagas(datos):
                 ("nombre", "nombre_comun", "descripcion"),
             )
         )
-        catalogo.append(
-            {
-                "id": id_plaga,
-                "nombre": nombre,
-                "nombres_locales": _normalizar_lista_textos(
-                    elemento.get("nombres_locales")
-                ),
-                "cultivos": _normalizar_lista_textos(
-                    elemento.get("cultivos")
-                ),
-                "sintomas": _normalizar_lista_textos(
-                    elemento.get("sintomas")
-                ),
-                "severidad": _normalizar_severidad(
-                    elemento.get("severidad")
-                ),
-                "cuarentenaria": _normalizar_cuarentenaria(
-                    elemento.get("cuarentenaria")
-                ),
-            }
-        )
+        registro = {
+            "id": id_plaga,
+            "nombre": nombre,
+            "nombres_locales": _normalizar_lista_textos(
+                elemento.get("nombres_locales")
+            ),
+            "cultivos": _normalizar_lista_textos(elemento.get("cultivos")),
+            "sintomas": _normalizar_lista_textos(elemento.get("sintomas")),
+            "severidad": _normalizar_severidad(elemento.get("severidad")),
+            "cuarentenaria": _normalizar_cuarentenaria(
+                elemento.get("cuarentenaria")
+            ),
+        }
+        if incluir_nivel2:
+            registro.update(
+                {
+                    "tipo": _normalizar_nombre(elemento.get("tipo"))
+                    or None,
+                    "especialidad": (
+                        _normalizar_nombre(elemento.get("especialidad"))
+                        or None
+                    ),
+                    "etapas_criticas": _normalizar_mapa_etapas(
+                        elemento.get("etapas_criticas")
+                    ),
+                    "etapas_susceptibles": _normalizar_mapa_etapas(
+                        elemento.get("etapas_susceptibles")
+                    ),
+                }
+            )
+        catalogo.append(registro)
 
     return catalogo
 
@@ -212,6 +262,179 @@ def normalizar_reportes(datos):
         raise ErrorApiReto("La API no devolvió una lista de reportes.")
 
     return datos
+
+
+def normalizar_tecnicos(datos):
+    """Devuelve la lista de tecnicos con los campos que usa la regla.
+
+    Cada tecnico conserva ``id``, ``nombre``, ``especialidades``,
+    ``casos_activos``, ``capacidad_maxima_casos`` y ``disponible``. Se
+    aceptan envolturas comunes (``tecnicos``, ``data``, ``items``).
+    """
+
+    if isinstance(datos, dict):
+        for clave in ("tecnicos", "data", "items", "resultados"):
+            if isinstance(datos.get(clave), list):
+                datos = datos[clave]
+                break
+        else:
+            raise ErrorApiReto("La API no devolvió una lista de tecnicos.")
+
+    if not isinstance(datos, list):
+        raise ErrorApiReto("La API no devolvió una lista de tecnicos.")
+
+    tecnicos = []
+    for elemento in datos:
+        if not isinstance(elemento, dict):
+            continue
+        id_tecnico = _normalizar_id(
+            _primer_valor(elemento, ("id", "tecnico_id", "codigo"))
+        )
+        if id_tecnico is None:
+            continue
+        casos = elemento.get(
+            "casos_activos",
+            elemento.get("carga", 0),
+        )
+        capacidad = elemento.get(
+            "capacidad_maxima_casos",
+            elemento.get("tope", 0),
+        )
+        if isinstance(casos, bool) or not isinstance(casos, (int, float)):
+            casos = 0
+        if isinstance(capacidad, bool) or not isinstance(
+            capacidad, (int, float),
+        ):
+            capacidad = 0
+        especialidades = elemento.get("especialidades")
+        if especialidades is None:
+            especialidades = elemento.get("especialidad")
+        disponible = elemento.get("disponible")
+        if disponible is None:
+            disponible = True
+        else:
+            disponible = _normalizar_cuarentenaria(disponible)
+        tecnicos.append(
+            {
+                "id": id_tecnico,
+                "nombre": _normalizar_nombre(
+                    _primer_valor(elemento, ("nombre", "descripcion"))
+                ),
+                "especialidades": _normalizar_lista_textos(
+                    especialidades
+                ),
+                "casos_activos": int(casos),
+                "capacidad_maxima_casos": int(capacidad),
+                "disponible": disponible,
+                "base": _normalizar_nombre(elemento.get("base")) or None,
+                "lat": _normalizar_numero(elemento.get("lat")),
+                "lon": _normalizar_numero(elemento.get("lon")),
+            }
+        )
+
+    return tecnicos
+
+
+def normalizar_parcelas(datos):
+    """Devuelve las parcelas con cultivo, superficie, etapa y ubicación."""
+
+    if isinstance(datos, dict):
+        for clave in ("parcelas", "data", "items", "resultados"):
+            if isinstance(datos.get(clave), list):
+                datos = datos[clave]
+                break
+        else:
+            raise ErrorApiReto("La API no devolvió una lista de parcelas.")
+
+    if not isinstance(datos, list):
+        raise ErrorApiReto("La API no devolvió una lista de parcelas.")
+
+    parcelas = []
+    for elemento in datos:
+        if not isinstance(elemento, dict):
+            continue
+        id_parcela = _normalizar_id(
+            _primer_valor(elemento, ("id", "parcela_id", "codigo"))
+        )
+        if id_parcela is None:
+            continue
+        parcelas.append(
+            {
+                "id": id_parcela,
+                "productor_id": _normalizar_id(
+                    _primer_valor(elemento, ("productor_id", "productor"))
+                ),
+                "nombre": _normalizar_nombre(elemento.get("nombre")),
+                "municipio": _normalizar_nombre(elemento.get("municipio")),
+                "localidad": _normalizar_nombre(elemento.get("localidad")),
+                "cultivo": _normalizar_nombre(elemento.get("cultivo")),
+                "superficie_ha": _normalizar_numero(
+                    elemento.get(
+                        "superficie_ha",
+                        elemento.get("superficie_hectareas"),
+                    )
+                ),
+                "etapa": _normalizar_nombre(elemento.get("etapa")),
+                "lat": _normalizar_numero(elemento.get("lat")),
+                "lon": _normalizar_numero(elemento.get("lon")),
+            }
+        )
+
+    return parcelas
+
+
+def normalizar_casos_previos(datos):
+    """Devuelve los casos de la semana anterior con sus valores esperados."""
+
+    if isinstance(datos, dict):
+        for clave in ("casos", "data", "items", "resultados"):
+            if isinstance(datos.get(clave), list):
+                datos = datos[clave]
+                break
+        else:
+            raise ErrorApiReto("La API no devolvió una lista de casos previos.")
+
+    if not isinstance(datos, list):
+        raise ErrorApiReto("La API no devolvió una lista de casos previos.")
+
+    casos = []
+    for elemento in datos:
+        if not isinstance(elemento, dict):
+            continue
+        id_reporte = _normalizar_id(
+            _primer_valor(elemento, ("reporte_id", "id"))
+        )
+        if id_reporte is None:
+            continue
+        casos.append(
+            {
+                "reporte_id": id_reporte,
+                "recibido": _normalizar_nombre(elemento.get("recibido")),
+                "productor_id": _normalizar_id(
+                    _primer_valor(elemento, ("productor_id", "productor"))
+                ),
+                "parcela_id": _normalizar_id(
+                    _primer_valor(elemento, ("parcela_id", "parcela"))
+                ),
+                "cultivo": _normalizar_nombre(elemento.get("cultivo")),
+                "plaga": _normalizar_id(
+                    _primer_valor(elemento, ("plaga", "plaga_id"))
+                ),
+                "prioridad": _normalizar_entero(elemento.get("prioridad")),
+                "semaforo": (
+                    _normalizar_nombre(elemento.get("semaforo")) or None
+                ),
+                "brote": _normalizar_cuarentenaria(elemento.get("brote")),
+                "tecnico_id": _normalizar_id(
+                    _primer_valor(elemento, ("tecnico_id", "tecnico"))
+                ),
+                "lat": _normalizar_numero(elemento.get("lat")),
+                "lon": _normalizar_numero(elemento.get("lon")),
+                "pct": _normalizar_numero(elemento.get("pct")),
+            }
+        )
+
+    return casos
 
 
 CAMPOS_TEXTO_REPORTE = (
@@ -402,7 +625,7 @@ class ClienteApiReto:
         """Obtiene el catálogo oficial de plagas."""
 
         datos = self._solicitar("GET", "/plagas")
-        return normalizar_catalogo_plagas(datos)
+        return normalizar_catalogo_plagas(datos, incluir_nivel2=True)
 
     def listar_reportes(self, desde):
         """Obtiene los reportes publicados desde un instante dado."""
@@ -416,6 +639,37 @@ class ClienteApiReto:
             params={"desde": desde.strip()},
         )
         return normalizar_reportes(datos)
+
+    def listar_tecnicos(self, momento=None):
+        """Obtiene los tecnicos disponibles con su carga en un instante.
+
+        ``momento`` es un ISO 8601 opcional. Si se omite, la API usa el
+        momento actual. Devuelve la lista normalizada que consume la regla
+        ``reglas.asignador_tecnicos``.
+        """
+
+        parametros = None
+        if isinstance(momento, str) and momento.strip():
+            parametros = {"momento": momento.strip()}
+
+        datos = self._solicitar("GET", "/tecnicos", params=parametros)
+        return normalizar_tecnicos(datos)
+
+    def listar_parcelas(self, productor_id=None):
+        """Obtiene las parcelas con cultivo, superficie, etapa y ubicación."""
+
+        parametros = None
+        if isinstance(productor_id, str) and productor_id.strip():
+            parametros = {"productor_id": productor_id.strip()}
+
+        datos = self._solicitar("GET", "/parcelas", params=parametros)
+        return normalizar_parcelas(datos)
+
+    def listar_casos_previos(self):
+        """Obtiene los casos de la semana anterior con sus valores esperados."""
+
+        datos = self._solicitar("GET", "/casos-previos")
+        return normalizar_casos_previos(datos)
 
     def validar_caso(self, caso):
         """Valida un caso sin crearlo. Es seguro en modo simulación."""

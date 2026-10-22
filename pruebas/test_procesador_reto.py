@@ -27,6 +27,7 @@ CATALOGO = [
         "sintomas": ["hojas perforadas"],
         "severidad": "alta",
         "cuarentenaria": True,
+        "especialidad": "entomologia",
     }
 ]
 REPORTE = {
@@ -80,6 +81,9 @@ class ProcesadorReportesTests(unittest.TestCase):
         reportes=None,
         catalogo=None,
         clasificador=None,
+        tecnicos=None,
+        parcelas=None,
+        casos_previos=None,
         error_validar=None,
         error_crear=None,
         urgencia=None,
@@ -94,6 +98,9 @@ class ProcesadorReportesTests(unittest.TestCase):
                 [dict(REPORTE)] if reportes is None else reportes
             ),
             catalogo=CATALOGO if catalogo is None else catalogo,
+            tecnicos=tecnicos,
+            parcelas=parcelas,
+            casos_previos=casos_previos,
             error_validar=error_validar,
             error_crear=error_crear,
         )
@@ -193,6 +200,9 @@ class ProcesadorReportesTests(unittest.TestCase):
                 "es_plaga": True,
                 "plaga": "plaga-1",
                 "urgente": True,
+                "semaforo": "rojo",
+                "prioridad": 100,
+                "brote": False,
             }),
             cliente.llamadas,
         )
@@ -348,6 +358,10 @@ class ProcesadorReportesTests(unittest.TestCase):
                 "sintomas",
                 "severidad",
                 "cuarentenaria",
+                "tipo",
+                "especialidad",
+                "etapas_criticas",
+                "etapas_susceptibles",
             },
         )
         self.assertEqual(plaga["id"], "desconocida")
@@ -357,7 +371,137 @@ class ProcesadorReportesTests(unittest.TestCase):
                 "es_plaga": True,
                 "plaga": "desconocida",
                 "urgente": True,
+                "semaforo": "verde",
+                "prioridad": 0,
+                "brote": False,
             }),
+            cliente.llamadas,
+        )
+
+    def test_caso_incluye_semaforo_y_tecnico_cuando_hay_disponibles(self):
+        tecnicos = [
+            {
+                "id": "tec-1",
+                "especialidades": ["entomologia"],
+                "casos_activos": 0,
+                "capacidad_maxima_casos": 3,
+                "disponible": True,
+            }
+        ]
+        procesador, cliente, _, _, _ = self._crear_procesador(
+            tecnicos=tecnicos
+        )
+
+        resumen = procesador.procesar("2026-10-20T00:00:00Z")
+
+        self.assertEqual(resumen.validados, 1)
+        self.assertIn(("listar_tecnicos", None), cliente.llamadas)
+        self.assertIn(
+            (
+                "validar_caso",
+                {
+                    "reporte_id": "r-1",
+                    "es_plaga": True,
+                    "plaga": "plaga-1",
+                    "urgente": True,
+                    "semaforo": "rojo",
+                    "prioridad": 100,
+                    "tecnico_id": "tec-1",
+                    "brote": False,
+                },
+            ),
+            cliente.llamadas,
+        )
+
+    def test_prioridad_usa_parcela_y_brote_usa_casos_previos(self):
+        catalogo = [
+            {
+                "id": "plaga-1",
+                "nombre": "Gusano",
+                "nombres_locales": [],
+                "cultivos": ["maíz"],
+                "sintomas": ["hojas perforadas"],
+                "severidad": "alta",
+                "cuarentenaria": False,
+                "tipo": "plaga",
+                "especialidad": "entomologia",
+                "etapas_criticas": {"maíz": ["V6"]},
+                "etapas_susceptibles": {"maíz": ["V10"]},
+            }
+        ]
+        reporte = {
+            "id": "r-nivel2",
+            "tipo": "texto",
+            "texto": "Hojas perforadas.",
+            "parcela_id": "P-1",
+            "lat": 19.0,
+            "lon": -99.0,
+            "recibido": "2026-10-10T10:00:00-06:00",
+        }
+        parcelas = [
+            {
+                "id": "P-1",
+                "cultivo": "maíz",
+                "superficie_ha": 4.0,
+                "etapa": "V6",
+                "lat": 19.0,
+                "lon": -99.0,
+            }
+        ]
+        casos_previos = [
+            {
+                "reporte_id": "R-0",
+                "plaga": "plaga-1",
+                "lat": 19.005,
+                "lon": -99.0,
+                "recibido": "2026-10-09T10:00:00-06:00",
+            },
+            {
+                "reporte_id": "R-1",
+                "plaga": "plaga-1",
+                "lat": 19.01,
+                "lon": -99.0,
+                "recibido": "2026-10-08T10:00:00-06:00",
+            },
+        ]
+        tecnicos = [
+            {
+                "id": "tec-1",
+                "especialidades": ["entomologia"],
+                "casos_activos": 0,
+                "capacidad_maxima_casos": 5,
+                "disponible": True,
+                "lat": 19.0,
+                "lon": -99.0,
+            }
+        ]
+        procesador, cliente, _, _, _ = self._crear_procesador(
+            reportes=[reporte],
+            catalogo=catalogo,
+            tecnicos=tecnicos,
+            parcelas=parcelas,
+            casos_previos=casos_previos,
+        )
+
+        resumen = procesador.procesar("2026-10-10T00:00:00Z")
+
+        self.assertEqual(resumen.validados, 1)
+        self.assertIn(("listar_parcelas", None), cliente.llamadas)
+        self.assertIn(("listar_casos_previos",), cliente.llamadas)
+        self.assertIn(
+            (
+                "validar_caso",
+                {
+                    "reporte_id": "r-nivel2",
+                    "es_plaga": True,
+                    "plaga": "plaga-1",
+                    "urgente": True,
+                    "semaforo": "amarillo",
+                    "prioridad": 68,
+                    "tecnico_id": "tec-1",
+                    "brote": True,
+                },
+            ),
             cliente.llamadas,
         )
 
@@ -421,6 +565,9 @@ class ProcesadorReportesTests(unittest.TestCase):
                 "es_plaga": True,
                 "plaga": "plaga-1",
                 "urgente": True,
+                "semaforo": "rojo",
+                "prioridad": 100,
+                "brote": False,
             },
         )
 

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acceso del coordinador</title>
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <main class="contenedor-login">
+    <h1>Sistema de Alerta de Plagas</h1>
+    <p class="subtitulo">Acceso del coordinador</p>
+
+    <form id="formulario-login" class="tarjeta">
+      <label for="contrasena">Contraseña</label>
+      <input
+        id="contrasena"
+        name="contrasena"
+        type="password"
+        autocomplete="current-password"
+        required
+      >
+      <button type="submit" class="boton primario">Entrar</button>
+      <p id="error-login" class="error" hidden></p>
+    </form>
+
+    <p class="pie">Las sesiones expiran después de 1 hora.</p>
+  </main>
+
+  <script src="js/login.js"></script>
+</body>
+</html>
