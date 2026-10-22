@@ -23,7 +23,7 @@ const config = {
 
 const consultas = [
   { id: 'R-1', productor_id: 'PR-1', parcela_id: 'P-1', semaforo: 'rojo', estado: 'analizado', brote: true, recibido: '2026-10-21T10:00:00Z', tecnico_id: 'T-1', tecnico_nombre: 'Técnico Uno' },
-  { id: 'R-2', productor_id: 'PR-2', parcela_id: 'P-9', semaforo: 'verde', estado: 'analizado', brote: false, recibido: '2026-10-21T11:00:00Z' },
+  { id: 'R-2', productor_id: 'PR-2', parcela_id: 'P-9', semaforo: 'verde', estado: 'analizado', brote: true, cultivo: 'maíz', lat: 1.01, lon: 2.01, recibido: '2026-10-21T11:00:00Z' },
   { id: 'R-3', productor_id: 'PR-1', parcela_id: 'P-2', semaforo: 'amarillo', estado: 'cerrado', brote: false, recibido: '2026-10-20T10:00:00Z' },
 ];
 
@@ -64,7 +64,18 @@ doble('agente', {
 });
 doble('reglas', {});
 doble('vision', { analizarBuffer: async () => null });
-doble('tecnicos', { distanciaKm: () => 99 });
+doble('tecnicos', {
+  distanciaKm(lat1, lon1, lat2, lon2) {
+    const r = 6371;
+    const rad = (g) => (Number(g) * Math.PI) / 180;
+    const dLat = rad(lat2 - lat1);
+    const dLon = rad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 2 * r * Math.asin(Math.min(1, Math.sqrt(a)));
+  },
+});
 
 const portal = require(ruta('portal'));
 const rutas = require(ruta('portal-rutas'));
@@ -270,6 +281,33 @@ test('una parcela o un caso ajenos devuelven 403 sin revelar existencia', async 
   assert.strictEqual(caso.statusCode, 403);
   assert.strictEqual(inventado.statusCode, 403);
   assert.deepStrictEqual(json(caso), json(inventado));
+});
+
+test('el mapa privado solo trae datos propios y alertas anónimas', async () => {
+  const { cookie } = cookieSesion({ rol: 'productor', productor_id: 'PR-1' });
+  const res = await peticion({ destino: '/api/productor/mapa?productor_id=PR-2', cookie });
+  assert.strictEqual(res.statusCode, 200);
+  const d = json(res);
+  assert.deepStrictEqual(d.parcelas.map((p) => p.parcela_id), ['P-1', 'P-2']);
+  assert.deepStrictEqual(d.casos.map((c) => c.id), ['R-1', 'R-3']);
+  assert.deepStrictEqual(d.visitas.map((v) => v.reporte_id), ['R-1']);
+  assert.strictEqual(d.radio_km, 5);
+  assert.strictEqual(d.alertas.length, 1, 'un brote cercano deduplicado');
+  const alerta = d.alertas[0];
+  assert.deepStrictEqual(
+    Object.keys(alerta).sort(),
+    ['cultivo', 'distancia_km', 'parcela_ref', 'recomendacion', 'rumbo', 'tipo'],
+  );
+  assert.ok(!('lat' in alerta) && !('lon' in alerta) && !('productor_id' in alerta));
+  assert.strictEqual(alerta.parcela_ref, 'P-1');
+});
+
+test('el mapa privado exige sesión de productor', async () => {
+  const sin = await peticion({ destino: '/api/productor/mapa' });
+  const coordinador = cookieSesion({ rol: 'coordinador' });
+  const malRol = await peticion({ destino: '/api/productor/mapa', cookie: coordinador.cookie });
+  assert.strictEqual(sin.statusCode, 401);
+  assert.strictEqual(malRol.statusCode, 403);
 });
 
 test('manipular productor_id en el body no cambia el dueño del reporte', async () => {

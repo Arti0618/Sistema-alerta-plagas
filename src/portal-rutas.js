@@ -261,6 +261,21 @@ async function apiProductor(req, res, url, sesion) {
     if (!c || c.productor_id !== pid) return enviarJson(res, 403, { error: 'No autorizado' });
     return enviarJson(res, 200, { caso: datos.casosDe(pid).find((x) => x.id === c.id) || null });
   }
+  if (ruta === 'mapa' && req.method === 'GET') {
+    const cat = await datos.catalogos();
+    let visitas = [];
+    try {
+      const desde = new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString();
+      if (typeof api.visitas === 'function') visitas = (await api.visitas(desde)) || [];
+    } catch {
+      visitas = [];
+    }
+    return enviarJson(
+      res,
+      200,
+      datos.mapaProductor(pid, { catalogos: cat, consultas: store.listaConsultas(), visitas }),
+    );
+  }
   if (ruta === 'alertas' && req.method === 'GET') {
     const cat = await datos.catalogos();
     const propias = datos.parcelasDe(pid, cat.parcelas);

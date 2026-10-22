@@ -279,6 +279,133 @@ function filtrarProductores(lista, filtros = {}) {
   });
 }
 
+/* ------------------------------- mapa propio ------------------------------ */
+
+const RADIO_ALERTAS_KM = 5;
+
+function distanciaKm(lat1, lon1, lat2, lon2) {
+  const r = 6371;
+  const rad = (g) => (Number(g) * Math.PI) / 180;
+  const dLat = rad(lat2 - lat1);
+  const dLon = rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * r * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function rumboHacia(lat1, lon1, lat2, lon2) {
+  const rad = (g) => (Number(g) * Math.PI) / 180;
+  const f1 = rad(lat1);
+  const f2 = rad(lat2);
+  const dl = rad(lon2 - lon1);
+  const y = Math.sin(dl) * Math.cos(f2);
+  const x = Math.cos(f1) * Math.sin(f2) - Math.sin(f1) * Math.cos(f2) * Math.cos(dl);
+  return (Math.atan2(y, x) * 180) / Math.PI;
+}
+
+/**
+ * Datos del mapa de un productor. Todo sale de su sesión:
+ * parcelas propias, casos propios, visitas propias y alertas anónimas
+ * (solo distancia aproximada, rumbo, cultivo y recomendación).
+ */
+function mapaProductor(productorId, { catalogos: cat, consultas = [], visitas = [] }) {
+  const propias = parcelasDe(productorId, cat.parcelas).filter(
+    (p) => p.lat != null && p.lon != null,
+  );
+  const porId = new Map(propias.map((p) => [p.id, p]));
+  const deProductor = consultas.filter((c) => c.productor_id === productorId);
+  const folios = new Set(deProductor.map((c) => c.id));
+
+  const visitasPropias = (visitas || []).filter((v) => folios.has(v.reporte_id));
+  const visitados = new Set(visitasPropias.map((v) => v.reporte_id));
+
+  const casos = deProductor.map((c) => {
+    const p = porId.get(c.parcela_id) || null;
+    return {
+      id: c.id,
+      parcela_id: c.parcela_id || null,
+      parcela: c.parcela || (p ? p.nombre : null),
+      cultivo: c.cultivo || (p ? p.cultivo : null) || null,
+      fecha: c.recibido || null,
+      plaga: c.plaga_nombre || c.plaga || null,
+      semaforo: c.semaforo || null,
+      prioridad: c.prioridad ?? null,
+      tecnico: c.tecnico_nombre || c.tecnico || null,
+      brote: c.brote === true,
+      estado: c.estado || null,
+      visita_pendiente: !visitados.has(c.id),
+      lat: p ? p.lat : null,
+      lon: p ? p.lon : null,
+    };
+  });
+
+  const visitasOut = visitasPropias.map((v) => {
+    const c = deProductor.find((x) => x.id === v.reporte_id) || null;
+    const p = c ? porId.get(c.parcela_id) : null;
+    return {
+      reporte_id: v.reporte_id,
+      parcela_id: c ? c.parcela_id : null,
+      parcela: c ? c.parcela : null,
+      fecha: v.fecha || v.recibido || null,
+      tecnico: v.tecnico_nombre || v.tecnico || null,
+      estado: v.estado || null,
+      lat: p ? p.lat : null,
+      lon: p ? p.lon : null,
+    };
+  });
+
+  const parcelasOut = propias.map((p) => {
+    const suyos = casos.filter((c) => c.parcela_id === p.id);
+    return {
+      parcela_id: p.id,
+      nombre: p.nombre,
+      cultivo: p.cultivo || null,
+      etapa: p.etapa || null,
+      superficie_ha: p.superficie_ha ?? null,
+      municipio: p.municipio || p.localidad || null,
+      lat: p.lat,
+      lon: p.lon,
+      casos_abiertos: suyos.filter((c) => c.estado && c.estado !== 'cerrado').length,
+      visita_pendiente: suyos.some((c) => c.visita_pendiente),
+    };
+  });
+
+  // Brotes de otros productores: se deduplican y solo se expone la distancia
+  // y el rumbo desde la parcela propia más cercana. Nunca IDs ni coordenadas.
+  const vistos = new Set();
+  const alertas = [];
+  for (const b of consultas) {
+    if (b.productor_id === productorId) continue;
+    if (b.brote !== true || b.lat == null || b.lon == null) continue;
+    const clave = `${Number(b.lat).toFixed(3)}:${Number(b.lon).toFixed(3)}`;
+    if (vistos.has(clave)) continue;
+    let cerca = null;
+    for (const p of propias) {
+      const d = distanciaKm(p.lat, p.lon, b.lat, b.lon);
+      if (!cerca || d < cerca.distancia) cerca = { distancia: d, parcela: p };
+    }
+    if (!cerca || cerca.distancia > RADIO_ALERTAS_KM) continue;
+    vistos.add(clave);
+    alertas.push({
+      distancia_km: Math.round(cerca.distancia * 10) / 10,
+      rumbo: Math.round(rumboHacia(cerca.parcela.lat, cerca.parcela.lon, b.lat, b.lon)),
+      parcela_ref: cerca.parcela.id,
+      cultivo: b.cultivo || null,
+      tipo: 'brote cercano',
+      recomendacion: 'Refuerza la vigilancia de tu parcela y reporta cualquier cambio.',
+    });
+  }
+
+  return {
+    radio_km: RADIO_ALERTAS_KM,
+    parcelas: parcelasOut,
+    casos,
+    visitas: visitasOut,
+    alertas: alertas.slice(0, 12),
+  };
+}
+
 /** Quita los campos internos antes de enviar la ficha al navegador. */
 function productorFicha(f) {
   const { _folios, _parcelas_ids, ...resto } = f;
@@ -383,6 +510,9 @@ module.exports = {
   productorFicha,
   paginar,
   expedienteProductor,
+  mapaProductor,
+  distanciaKm,
+  rumboHacia,
   configPortal: () => ({
     enviarCasoOficial: config.portalEnviarCasoOficial,
   }),
