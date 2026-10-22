@@ -42,6 +42,7 @@ const deps = {
   urlArchivo: (ruta) => telegram.urlArchivo(ruta),
   generar: (opciones) => gemini.generar(opciones),
   parteInline: (buffer, mime) => gemini.parteInline(buffer, mime),
+  dormir: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   fs,
   tmpdir: () => os.tmpdir(),
 };
@@ -105,36 +106,121 @@ async function descargarFotoTemporal(foto) {
     throw new VisionError('La imagen excede el tamaño permitido', 'tamano');
   }
 
-  const control = new AbortController();
-  const temporizador = setTimeout(() => control.abort(), Number(config.visionTimeoutMs) || 15000);
-
-  let res;
-  try {
-    // La URL lleva el token del bot: no se guarda ni se registra en ningún sitio.
-    res = await deps.fetch(deps.urlArchivo(info.file_path), { signal: control.signal });
-  } catch {
-    throw new VisionError('No se pudo descargar la fotografía', 'descarga');
-  } finally {
-    clearTimeout(temporizador);
-  }
-
-  if (!res || !res.ok) throw new VisionError('No se pudo descargar la fotografía', 'descarga');
-
-  let buffer;
-  try {
-    buffer = Buffer.from(await res.arrayBuffer());
-  } catch {
-    throw new VisionError('No se pudo leer la fotografía', 'descarga');
-  }
-  if (!buffer.length) throw new VisionError('La imagen llegó vacía', 'descarga');
-  if (limite && buffer.length > limite) {
-    throw new VisionError('La imagen excede el tamaño permitido', 'tamano');
-  }
+  const buffer = await descargarBinario(info, limite);
 
   const extension = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
   const ruta = path.join(deps.tmpdir(), `alerta-foto-${crypto.randomUUID()}.${extension}`);
   await deps.fs.writeFile(ruta, buffer, { mode: 0o600 });
   return { ruta, mime, bytes: buffer.length };
+}
+
+/* ------------------------- descarga con reintentos ------------------------- */
+
+const INTENTOS_MAX = 2;
+const ESPERA_REINTENTO_MS = 800;
+const MAX_ESPERA_429_MS = 3000; // nunca esperar indefinidamente
+const HTTP_REINTENTABLES = new Set([429, 500, 502, 503, 504]);
+
+/** Registro sanitizado: sin token, URL, file_path, file_id ni contenido. */
+function registrarDescarga({ intento, http, duracion, categoria }) {
+  console.log(
+    `[vision] etapa=descarga intento=${intento} http=${http === null ? '-' : http} ` +
+      `duracion_ms=${duracion} categoria=${categoria}`,
+  );
+}
+
+function esTimeout(err) {
+  return Boolean(err && (err.name === 'AbortError' || /abort|timeout/i.test(String(err.message))));
+}
+
+/** Lee retry_after (cabecera o cuerpo JSON de Telegram) con tope seguro. */
+async function leerRetryAfter(res) {
+  try {
+    const crudo = res?.headers?.get?.('retry-after');
+    if (crudo !== null && crudo !== undefined && String(crudo).trim() !== '') {
+      const cabecera = Number(crudo);
+      if (Number.isFinite(cabecera) && cabecera >= 0) return cabecera;
+    }
+    const cuerpo = await res.text();
+    const datos = JSON.parse(cuerpo);
+    const segundos = Number(datos?.parameters?.retry_after);
+    return Number.isFinite(segundos) && segundos >= 0 ? segundos : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Descarga el binario con 2 intentos como máximo.
+ * Reintenta solo ante red transitoria, 429 y 5xx (500/502/503/504).
+ * Cada intento tiene su propio timeout.
+ */
+async function descargarBinario(info, limite) {
+  let ultimoError = null;
+
+  for (let intento = 1; intento <= INTENTOS_MAX; intento++) {
+    const inicio = Date.now();
+    const control = new AbortController();
+    const temporizador = setTimeout(
+      () => control.abort(),
+      Number(config.visionTimeoutMs) || 15000,
+    );
+    let http = null;
+    let categoria = null;
+    let espera = ESPERA_REINTENTO_MS;
+
+    try {
+      // La URL lleva el token del bot: se usa solo aquí y no se registra.
+      const res = await deps.fetch(deps.urlArchivo(info.file_path), { signal: control.signal });
+      http = res.status;
+
+      if (res.ok) {
+        const buffer = Buffer.from(await res.arrayBuffer());
+        if (!buffer.length) {
+          throw new VisionError('La imagen llegó vacía', 'descarga_red');
+        }
+        if (limite && buffer.length > limite) {
+          throw new VisionError('La imagen excede el tamaño permitido', 'tamano');
+        }
+        registrarDescarga({ intento, http, duracion: Date.now() - inicio, categoria: 'ok' });
+        return buffer;
+      }
+
+      categoria = 'descarga_http';
+      ultimoError = new VisionError('No se pudo descargar la fotografía', 'descarga_http');
+      if (http === 429) {
+        const retryAfter = await leerRetryAfter(res);
+        if (retryAfter !== null) {
+          espera = Math.min(MAX_ESPERA_429_MS, Math.max(0, retryAfter * 1000));
+        }
+      }
+    } catch (err) {
+      if (err instanceof VisionError && err.codigo === 'tamano') {
+        clearTimeout(temporizador);
+        throw err; // nunca se reintenta un tamaño excesivo
+      }
+      if (esTimeout(err)) {
+        categoria = 'timeout';
+        ultimoError = new VisionError('La descarga de la fotografía tardó demasiado', 'timeout');
+      } else {
+        categoria = 'descarga_red';
+        ultimoError = new VisionError('No se pudo descargar la fotografía', 'descarga_red');
+      }
+    } finally {
+      clearTimeout(temporizador);
+    }
+
+    registrarDescarga({ intento, http, duracion: Date.now() - inicio, categoria });
+
+    const reintentar =
+      categoria === 'descarga_red' ||
+      (categoria === 'descarga_http' && HTTP_REINTENTABLES.has(http));
+
+    if (!reintentar || intento >= INTENTOS_MAX) throw ultimoError;
+    await deps.dormir(espera);
+  }
+
+  throw ultimoError || new VisionError('No se pudo descargar la fotografía', 'descarga_red');
 }
 
 async function borrarTemporal(ruta) {
