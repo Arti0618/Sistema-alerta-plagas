@@ -153,6 +153,14 @@ function resumenConsulta(c) {
     tecnico_id: c.tecnico_id || null,
     tecnico_nombre: c.tecnico_nombre || null,
     brote: c.brote ?? null,
+    // Estado real de un análisis local de Telegram: el panel debe poder
+    // distinguir "Sin vínculo", "Sin parcela", "Analizado localmente" y
+    // "No registrado oficialmente". Sin chat_id ni huellas del chat.
+    parcela_id: c.parcela_id || null,
+    estado_local: c.estado_local || null,
+    caso_oficial: c.caso_oficial === undefined || c.caso_oficial === null ? null : Boolean(c.caso_oficial),
+    folio: c.folio || null,
+    requiere_revision_coordinacion: Boolean(c.requiere_revision_coordinacion),
     es_seguimiento: Boolean(c.es_seguimiento),
     porcentaje: c.porcentaje ?? null,
     brote_cuenta: c.brote_cuenta ?? null,

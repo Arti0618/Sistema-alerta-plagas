@@ -991,9 +991,17 @@ function respuestaSinVinculo(orientacion) {
   return partes.join('\n\n');
 }
 
-function respuestaAnalisisLocal(orientacion) {
+/**
+ * Respuesta de un análisis local: la orientación agronómica la da el modelo
+ * (ya saneada) y la conclusión administrativa la construye el servidor. Nunca
+ * puede haber dos conclusiones: la del modelo se elimina antes.
+ */
+function respuestaAnalisisLocal(orientacion, estado = null) {
   const limpia = vinculacion.sanearRespuesta(orientacion);
-  return [limpia, vinculacion.MENSAJES.analizadoLocal].filter(Boolean).join('\n\n');
+  const conclusion = vinculacion.conclusionAdministrativa(
+    estado || { registrado: false, caso_oficial: false, folio: null },
+  );
+  return [limpia, conclusion].filter(Boolean).join('\n\n');
 }
 
 /** Foto sin pie de foto: se pide una descripción una sola vez. */
@@ -1118,7 +1126,9 @@ function registrarConsultaFoto(chatId, msg, caption, analisis, revision = null) 
   };
   store.agregarConsulta(consulta);
   store.incrementarMetrica('procesados');
-  return respuestaDeAnalisis(analisis);
+  // Se devuelve la orientación agronómica; el mensaje final (orientación +
+  // conclusión administrativa) lo arma el servidor en responderFotoConAnalisis.
+  return { id: consulta.id, texto: respuestaDeAnalisis(analisis) };
 }
 
 function respuestaFotoConEstado(analisisTexto, revision) {
@@ -1139,7 +1149,7 @@ async function responderFotoConAnalisis(chatId, msg, caption, revision = null) {
   } catch (err) {
     // Mensaje controlado: el error de vision nunca incluye token, URL ni imagen.
     console.error(`[vision] ${err?.codigo || 'error'}: ${err?.message || 'fallo'}`);
-    registrarConsultaFoto(
+    const guardado = registrarConsultaFoto(
       chatId,
       msg,
       caption,
@@ -1158,10 +1168,15 @@ async function responderFotoConAnalisis(chatId, msg, caption, revision = null) {
       },
       revision,
     );
-    return respuestaFotoConEstado(RESPUESTA_FOTO_SIN_ANALISIS, revision);
+    const finalError = respuestaFotoConEstado(RESPUESTA_FOTO_SIN_ANALISIS, revision);
+    store.actualizarConsulta(guardado.id, { respuesta: finalError });
+    return finalError;
   }
-  const texto = registrarConsultaFoto(chatId, msg, caption, analisis, revision);
-  return respuestaFotoConEstado(texto, revision);
+  const guardado = registrarConsultaFoto(chatId, msg, caption, analisis, revision);
+  const final = respuestaFotoConEstado(guardado.texto, revision);
+  // Se guarda exactamente lo que se respondió al productor.
+  store.actualizarConsulta(guardado.id, { respuesta: final });
+  return final;
 }
 
 /** Envía una respuesta por Telegram y la registra como mensaje saliente. */
@@ -1245,6 +1260,17 @@ async function responderEnTelegram(chatId, textoUsuario, msg, { esFoto = false, 
     }
   }
 
+  // Mensaje final: la orientación agronómica del modelo (saneada) más la
+  // conclusión administrativa que construye el servidor. El estado local
+  // nunca es un caso oficial, así que la conclusión es siempre la misma.
+  const respuestaFinal = vinculado
+    ? respuestaAnalisisLocal(interpretacion.respuesta, {
+        registrado: false,
+        caso_oficial: false,
+        folio: null,
+      })
+    : respuestaSinVinculo(interpretacion.respuesta);
+
   const consulta = {
     id: previa ? previa.id : idConsultaDe(chatId, msg.message_id, vinculado),
     telegram_chat_hash: hashChatSeguro(chatId),
@@ -1291,9 +1317,9 @@ async function responderEnTelegram(chatId, textoUsuario, msg, { esFoto = false, 
     ),
     confianza: interpretacion.confianza,
     razon: interpretacion.razon,
-    // El texto del modelo se guarda saneado: no puede quedar una afirmación
-    // administrativa en el historial aunque luego se corrija al responder.
-    respuesta: vinculacion.sanearRespuesta(interpretacion.respuesta),
+    // Se guarda exactamente lo que se respondió: la orientación agronómica ya
+    // saneada más la conclusión administrativa construida por el servidor.
+    respuesta: respuestaFinal,
     modelo: interpretacion.modelo || null,
     registrado: false,
     folio: null,
@@ -1312,9 +1338,7 @@ async function responderEnTelegram(chatId, textoUsuario, msg, { esFoto = false, 
   }
   if (consulta.brote) store.incrementarMetrica('brotes');
 
-  return vinculado
-    ? respuestaAnalisisLocal(interpretacion.respuesta)
-    : respuestaSinVinculo(interpretacion.respuesta);
+  return respuestaFinal;
 }
 
 /**

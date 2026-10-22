@@ -162,12 +162,21 @@ function dato(clave, valor) {
  * (rojo / naranja / amarillo / verde) y `prioridad` es un número de 0 a 100.
  */
 function esAnalisisTelegram(c) {
-  return Boolean(c && c.fuente === 'telegram' && (c.caso_oficial === false || c.estado_local === 'analizado'));
+  return Boolean(c && c.fuente === 'telegram');
 }
 
+/**
+ * Identificador oficial visible. En Telegram el productor_id solo se muestra
+ * si es un ID oficial (PR-###); los registros heredados guardaban el chat
+ * como productor y ese valor nunca debe mostrarse.
+ */
 function productorVisible(c) {
-  // En análisis locales no se muestra el productor_id oficial completo.
-  return c.productor || (esAnalisisTelegram(c) ? '—' : c.productor_id) || '—';
+  if (c.productor) return c.productor;
+  if (esAnalisisTelegram(c)) {
+    const id = String(c.productor_id || '');
+    return /^PR-[0-9]+$/.test(id) ? id : '—';
+  }
+  return c.productor_id || '—';
 }
 
 function etiquetaUrgencia(c) {
@@ -359,6 +368,20 @@ function renderDetalle() {
       esAnalisisTelegram(c)
         ? productorVisible(c)
         : `${c.productor || '—'} (${c.productor_id || '—'})`,
+    ),
+  );
+  cuerpo.append(
+    dato(
+      'Estado',
+      c.fuente === 'telegram'
+        ? c.registrado
+          ? 'Registrado oficialmente'
+          : c.caso_oficial === false || c.estado_local === 'analizado'
+            ? 'No registrado oficialmente'
+            : 'Sin confirmar'
+        : c.registrado
+          ? 'Registrado'
+          : 'Pendiente',
     ),
   );
   cuerpo.append(dato('Parcela', c.parcela ? `${c.parcela} (${c.parcela_id})` : c.parcela_id || '—'));

@@ -897,25 +897,144 @@ function marcarUpdateProcesado(clave) {
 /* Respuestas administrativas                                         */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Frases administrativas que el modelo NO puede afirmar. Se quitan del texto
+ * del modelo dejando intacta la orientación agronómica (plaga, síntomas,
+ * parcela, cultivo, recomendaciones).
+ */
+const FRASES_ADMINISTRATIVAS = [
+  // --- Registro del caso/reporte ---
+  // Nota: en JavaScript \b no reconoce letras no ASCII ("á" no es \w), así que
+  // los finales de patrón usan (?!\w) en lugar de \b.
+  /\b(?:hemos|habemos)\s+regist(?:rad|er)[a-z]*(?!\w)/gi,
+  /\b(?:ha|han)\s+qued(?:ad)?[oa]\s+registrad[oa]s?(?!\w)/gi,
+  /\bqued(?:ad)?[oa]\s+registrad[oa]s?(?!\w)/gi,
+  /\b(?:ya\s+)?(?:est[aá]|fue)\s+registrad[oa]s?(?!\w)/gi,
+  /\bse\s+registr[oó](?!\w)/gi,
+  /\bse\s+ha\s+registrad[oa]s?(?!\w)/gi,
+  /\breport(?:e|es)\s+registrad[oa]s?(?!\w)/gi,
+  /\bregistram(?:os|amos|aron)\s+(?:su|el|tu|un)\s+(?:reporte|caso)(?!\w)/gi,
+  /\b(?:tu|el|su)\s+(?:caso|reporte)\s+(?:qued(?:ad)?[oa]|ha\s+quedado|se\s+ha)\s+registrad[oa]s?(?!\w)/gi,
+  /\b(?:vamos\s+a|procederemos\s+a|se\s+va\s+a)\s+registrar(?!\w)/gi,
+  /\bse\s+registrar[aá]\s+(?:tu|el|su)\s+(?:caso|reporte)(?!\w)/gi,
+  // --- Folio y expediente ---
+  /\b(?:ya\s+tiene|tiene)\s+(?:el\s+)?folio(?!\w)/gi,
+  /\b(?:tu|el|su)\s+folio\s+(?:es|ser[aá])(?!\w)/gi,
+  /\b[^.!?]*\bfolio\b[^.!?]*/gi,
+  /\bexpediente(?!\w)/gi,
+  // --- Caso creado, generado o abierto ---
+  /\b(?:se\s+)?(?:cre[oó]|creamos|crearon|gener[oó]|generamos|generaron|abrimos|abri[oó]|abierto)\s+el\s+caso(?!\w)/gi,
+  /\bcaso\s+(?:creado|generado|abierto|registrado|formalizado)(?!\w)/gi,
+  // --- Visita programada ---
+  /\b[^.!?]*\bvisita\b[^.!?]*\b(?:programad[oa]|agendad[oa]|confirmad[oa]|coordinad[oa])(?!\w)[^.!?]*/gi,
+  // --- Aprobación (aprobado / aprobación / aprobada) ---
+  /\b[^.!?]*\baprob(?:ad[oa]s?|o|ó|aci[oó]n)(?!\w)[^.!?]*/gi,
+  // --- Notificación al coordinador ---
+  /\b[^.!?]*\b(?:coordinador|coordinaci[oó]n)\b[^.!?]*\b(?:notificad[oa]|informad[oa]|avisad[oa]|recibi[oó]|enter[oó])(?!\w)[^.!?]*/gi,
+];
+
+/** Mención de personal técnico (en cualquier orden dentro de la oración). */
+const MENCION_TECNICO = /\b(?:personal|equipo|t[eé]cnicos?|especialistas?)\b/i;
+
+/** Acción asertiva de un técnico: acudirá, visitará, fue enviado… */
+const ACCION_TECNICA =
+  /\b(?:acudir[aá]n?|visitar[aá]n?|visitara|visitarán|asistir[aá]n?|asignad[oa]s?|designad[oa]s?|enviad[oa]s?|atender[aá]n?|acompañar[aá]n?|presentar[aá]n?)(?!\w)/i;
+
+/**
+ * Marcadores que delatan una afirmación administrativa si sobreviven a la
+ * limpieza de frases: si aparece alguno, la oración completa se descarta.
+ */
+const MARCADORES_ADMINISTRATIVOS = [
+  /\bregist(?:rad|er)[a-z]*(?!\w)/i,
+  /\bregistram(?:os|amos|aron)(?!\w)/i,
+  /\bfolio(?!\w)/i,
+  /\bexpediente(?!\w)/i,
+  /\bvisita\b[^.!?]*\b(?:programad[oa]|agendad[oa]|confirmad[oa])(?!\w)/i,
+  // Promesas de visita, aunque no se mencione al técnico en la misma frase.
+  /\bvisit(?:ar[aá]n|ará|arán|ara)(?!\w)/i,
+  /\bacudir[aá]n?(?!\w)/i,
+  /\baprob(?:ad[oa]s?|o|ó|aci[oó]n)(?!\w)/i,
+  /\b(?:se\s+)?(?:cre[oó]|gener[oó]|abrimos|abri[oó])\s+el\s+caso(?!\w)/i,
+  /\bcaso\s+(?:creado|generado|abierto|registrado|formalizado)(?!\w)/i,
+  /\b(?:coordinador|coordinaci[oó]n)\b[^.!?]*\b(?:notificad[oa]|informad[oa]|avisad[oa])(?!\w)/i,
+];
+
+/**
+ * ¿La oración afirma que un técnico acudiría, atendería o fue enviado?
+ * Se comprueba sin importar el orden de las palabras.
+ */
+function afirmaAccionTecnica(texto) {
+  return MENCION_TECNICO.test(texto) && ACCION_TECNICA.test(texto);
+}
+
+/** Separa el texto en oraciones conservando la puntuación. */
+function separarOraciones(texto) {
+  return String(texto).match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
+}
+
+/** ¿Queda alguna afirmación administrativa en el texto? */
+function tieneAfirmacionAdministrativa(texto) {
+  if (afirmaAccionTecnica(texto)) return true;
+  return MARCADORES_ADMINISTRATIVOS.some((m) => m.test(texto));
+}
+
+/**
+ * Deja solo la orientación agronómica del modelo: quita cualquier afirmación
+ * administrativa (registro, folio, visita, técnico que acudirá, aprobación o
+ * notificación). El estado administrativo lo construye el servidor.
+ */
 function sanearRespuesta(texto) {
-  let salida = String(texto || '').trim();
-  if (!salida) return '';
-  const patrones = [
-    /(?:ya\s+)?hemos\s+registrado[^.!?]*(?:[.!?]|$)/gi,
-    /(?:tu\s+caso|tu\s+reporte|el\s+reporte)\s+(?:ya\s+)?(?:fue|qued[oó]|est[aá]|ser[aá]|ha\s+sido)\s+registrad[oa][^.!?]*(?:[.!?]|$)/gi,
-    /(?:vamos\s+a|procederemos\s+a|se\s+va\s+a)\s+registrar[^.!?]*(?:[.!?]|$)/gi,
-    /(?:se\s+registrar[aá]|registraremos|registramos|se\s+registr[oó]|se\s+ha\s+registrado)\s+(?:tu|el)\s+(?:caso|reporte)[^.!?]*(?:[.!?]|$)/gi,
-    /[^.!?]*\bfolio\b[^.!?]*(?:[.!?]|$)/gi,
-    /el\s+t[eé]cnico\s+ya\s+fue\s+enviado[^.!?]*(?:[.!?]|$)/gi,
-    /(?:un\s+)?t[eé]cnico\s+(?:te|le)\s+(?:visitar[aá]|contactar[aá])[^.!?]*(?:[.!?]|$)/gi,
-    /(?:se\s+)?(?:asign[oó]|design[oó])\s+(?:un\s+)?t[eé]cnico[^.!?]*(?:[.!?]|$)/gi,
-    /t[eé]cnico\s+(?:asignado|designado)[^.!?]*(?:[.!?]|$)/gi,
-    /tu\s+visita\s+est[aá]\s+programada[^.!?]*(?:[.!?]|$)/gi,
-    /(?:tu\s+caso|tu\s+reporte|el\s+reporte)\s+(?:fue|est[aá]|ha\s+sido)\s+aprobad[oa][^.!?]*(?:[.!?]|$)/gi,
-    /(?:el\s+coordinador|coordinaci[oó]n)\s+(?:aprob[oó]|aprobar[aá]|va\s+a\s+aprobar)[^.!?]*(?:[.!?]|$)/gi,
-  ];
-  for (const patron of patrones) salida = salida.replace(patron, '');
-  return salida.replace(/\s{2,}/g, ' ').replace(/\s+([.,;!?])/g, '$1').trim();
+  const original = String(texto || '').trim();
+  if (!original) return '';
+
+  const limpias = [];
+  for (const oracion of separarOraciones(original)) {
+    let limpia = oracion;
+    let huboFrase = false;
+    for (const frase of FRASES_ADMINISTRATIVAS) {
+      const antes = limpia;
+      limpia = limpia.replace(frase, ' ');
+      if (limpia !== antes) huboFrase = true;
+    }
+    limpia = limpia
+      .replace(/\s*\b(?:ya|as[ií]|entonces|qued[oa])\b(?=\s*[.;!?]|$)/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    // Si al quitar la frase solo queda un resto sin sentido, se descarta.
+    const palabras = limpia.replace(/[.;!?]/g, '').trim().split(/\s+/).filter(Boolean);
+    if (!limpia || palabras.length < 3) continue;
+    // Restos que empiezan con preposición ("en el sistema.") no aportan nada.
+    if (/^(?:en|de|para|con|por|sobre|como|desde|hacia)\s/i.test(limpia)) continue;
+    // Restos que empiezan con un artículo o pronombre y siguen con
+    // preposición ("Se en el sistema.") tampoco aportan nada.
+    if (huboFrase) {
+      const sinCola = limpia.replace(/^(?:(?:se|el|la|los|las|un|una|su|sus|ya|ha|han|nos|le)\s+)+/i, '');
+      if (/^(?:en|de|para|con|por|sobre|como|desde|hacia|a)\s/i.test(sinCola)) continue;
+    }
+    // Si todavía afirma algo administrativo, se descarta la oración entera.
+    if (tieneAfirmacionAdministrativa(limpia)) continue;
+    limpias.push(limpia);
+  }
+  return limpias
+    .join(' ')
+    .replace(/\s+([.,;!?])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/**
+ * Conclusión administrativa determinista. Solo afirma el registro cuando el
+ * estado persistido lo confirma (registrado + caso oficial + folio real);
+ * en cualquier otro caso dice exactamente que es una orientación local.
+ */
+function conclusionAdministrativa(estado = {}) {
+  const registrado = estado.registrado === true;
+  const confirmado = estado.caso_oficial === true || estado.confirmado === true;
+  const folio = typeof estado.folio === 'string' ? estado.folio.trim() : '';
+  if (registrado && confirmado && folio) {
+    return `Tu reporte fue registrado con el folio ${folio}.`;
+  }
+  return MENSAJES.analizadoLocal;
 }
 
 module.exports = {
@@ -950,5 +1069,6 @@ module.exports = {
   updateYaProcesado,
   marcarUpdateProcesado,
   sanearRespuesta,
+  conclusionAdministrativa,
   _reiniciarLimites,
 };
