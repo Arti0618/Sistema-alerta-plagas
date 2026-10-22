@@ -103,6 +103,8 @@ function respuestasValidas(extra = {}) {
   };
 }
 
+const logOriginal = console.log;
+
 function configurar() {
   archivos.clear();
   estado.partes = null;
@@ -119,7 +121,7 @@ function configurar() {
   config.visionMaxPorChat = 3;
   vision.reiniciarLimites();
 
-  const logOriginal = console.log;
+  console.log = logOriginal;
   console.log = (...args) => {
     estado.logs.push(args.join(' '));
     logOriginal(...args);
@@ -264,17 +266,23 @@ test('dos fallos de red: error controlado tras exactamente 2 intentos', async ()
   assert.strictEqual(estado.esperas.length, 1);
 });
 
-test('los registros de descarga no exponen datos sensibles', async () => {
+test('los registros de descarga y análisis no exponen datos sensibles', async () => {
   configurar();
   estado.fetchSeq = [new TypeError('fetch failed'), respuestaOk()];
   await vision.analizarFoto(foto().message);
 
-  assert.ok(estado.logs.length >= 2);
-  for (const linea of estado.logs) {
+  assert.ok(estado.logs.length >= 3, 'descarga (2 intentos) + análisis');
+  const descargas = estado.logs.filter((l) => l.includes('etapa=descarga'));
+  assert.strictEqual(descargas.length, 2);
+  for (const linea of descargas) {
     assert.match(linea, /\[vision\] etapa=descarga intento=\d/);
-    assert.ok(!/api\.telegram|file_1|botFICTICIO|base64|token|Bearer/i.test(linea), linea);
+  }
+  for (const linea of estado.logs) {
+    assert.ok(!/api\.telegram|file_1|botFICTICIO|base64|token|Bearer|prompt/i.test(linea), linea);
     assert.ok(!/\d{8,}:[A-Za-z0-9_-]{20,}/.test(linea), 'sin token en la URL');
   }
+  const analisis = estado.logs.find((l) => l.includes('etapa=analisis'));
+  assert.match(analisis, /modelo=modelo-prueba http=200 categoria=ok duracion_ms=\d+/);
 });
 
 test('envía imagen y caption juntos al modelo', async () => {

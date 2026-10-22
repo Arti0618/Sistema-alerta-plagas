@@ -351,33 +351,111 @@ async function pedirAnalisis({ ruta, mime, caption }) {
     throw new VisionError('No se pudo leer la fotografía temporal', 'descarga');
   }
 
-  let respuesta;
-  try {
-    respuesta = await deps.generar({
-      sistema: SISTEMA,
-      partes: [{ text: promptAnalisis(caption) }, deps.parteInline(buffer, mime)],
-      esquema: ESQUEMA,
-      temperatura: 0.1,
-      reintentos: 1,
-      modelos: config.visionModelos,
-    });
-  } catch (err) {
-    // Mensaje controlado: nunca se propaga el detalle de la URL ni del binario.
-    const codigo = /tiempo|timeout|abort/i.test(String(err?.message)) ? 'timeout' : 'analisis';
-    throw new VisionError('No se pudo analizar la imagen', codigo);
+  const partes = [{ text: promptAnalisis(caption) }, deps.parteInline(buffer, mime)];
+  const modelos = [
+    ...new Set(
+      (Array.isArray(config.visionModelos) && config.visionModelos.length
+        ? config.visionModelos
+        : [config.visionModel]
+      ).filter(Boolean),
+    ),
+  ];
+
+  let ultimoError = null;
+
+  for (let i = 0; i < modelos.length; i++) {
+    const modelo = modelos[i];
+    const inicio = Date.now();
+    try {
+      const respuesta = await deps.generar({
+        sistema: SISTEMA,
+        partes,
+        esquema: ESQUEMA,
+        temperatura: 0.1,
+        reintentos: 1,
+        modelos: [modelo],
+      });
+      registrarAnalisis({ modelo, http: 200, categoria: 'ok', duracion: Date.now() - inicio });
+      return interpretarRespuesta(respuesta, modelo);
+    } catch (err) {
+      // Un problema de formato de la respuesta no es un fallo del modelo:
+      // no se reintenta ni se cambia de modelo.
+      if (err instanceof VisionError) throw err;
+      const categoria = err?.codigo || 'analisis';
+      registrarAnalisis({
+        modelo,
+        http: err?.http ?? null,
+        categoria,
+        duracion: Date.now() - inicio,
+      });
+      ultimoError = err;
+
+      // Un único reintento controlado: solo cuota TEMPORAL, sin alternativa
+      // disponible y con retry_after corto. Nunca para cuota diaria/crédito.
+      const temporal = err?.http === 429 && categoria === 'cuota';
+      const sinAlternativas = modelos.length === 1;
+      if (temporal && sinAlternativas) {
+        const espera = Math.min(
+          Number(config.visionRetryAfterMaxMs) || 3000,
+          Math.max(0, Number(err.retryAfterMs) || 800),
+        );
+        await deps.dormir(espera);
+        const reintento = Date.now();
+        try {
+          const respuesta = await deps.generar({
+            sistema: SISTEMA,
+            partes,
+            esquema: ESQUEMA,
+            temperatura: 0.1,
+            reintentos: 1,
+            modelos: [modelo],
+          });
+          registrarAnalisis({
+            modelo,
+            http: 200,
+            categoria: 'ok',
+            duracion: Date.now() - reintento,
+          });
+          return interpretarRespuesta(respuesta, modelo);
+        } catch (err2) {
+          registrarAnalisis({
+            modelo,
+            http: err2?.http ?? null,
+            categoria: err2?.codigo || 'analisis',
+            duracion: Date.now() - reintento,
+          });
+          ultimoError = err2;
+        }
+      }
+    }
   }
 
+  const mensaje = String(ultimoError?.message || '');
+  const codigo = /timeout|abort|tiempo/i.test(mensaje) ? 'timeout' : 'analisis';
+  // Mensaje controlado: nunca se propaga el detalle de la URL ni del binario.
+  throw new VisionError('No se pudo analizar la imagen', codigo);
+}
+
+/** Registro sanitizado del análisis: sin prompt, imagen, clave ni URL. */
+function registrarAnalisis({ modelo, http, categoria, duracion }) {
+  console.log(
+    `[vision] etapa=analisis modelo=${modelo} http=${http === null ? '-' : http} ` +
+      `categoria=${categoria} duracion_ms=${duracion}`,
+  );
+}
+
+/** Valida y normaliza la respuesta del modelo. */
+function interpretarRespuesta(respuesta, modelo) {
   let crudo;
   try {
     crudo = JSON.parse(respuesta.texto);
   } catch {
     throw new VisionError('El modelo devolvió una respuesta inválida', 'respuesta');
   }
-
   const normalizado = normalizarResultado(crudo);
   return {
     ...normalizado,
-    modelo: respuesta.modelo || config.visionModel,
+    modelo: respuesta.modelo || modelo || config.visionModel,
     estado_analisis: normalizado.suficiente ? 'ok' : 'insuficiente',
   };
 }
@@ -411,6 +489,31 @@ function reiniciarLimites() {
 /* Entrada principal                                                   */
 /* ------------------------------------------------------------------ */
 
+/* -------------------------- límite de concurrencia ------------------------- */
+
+const MAX_SIMULTANEOS = 1;
+const MAX_EN_COLA = 3;
+let activos = 0;
+const enEspera = [];
+
+/** Serializa los análisis (1 a la vez) para no disparar reintentos en paralelo. */
+async function conLimite(tarea) {
+  if (activos >= MAX_SIMULTANEOS) {
+    if (enEspera.length >= MAX_EN_COLA) {
+      throw new VisionError('Demasiadas fotografías en cola', 'limite');
+    }
+    await new Promise((resolver) => enEspera.push(resolver));
+  }
+  activos += 1;
+  try {
+    return await tarea();
+  } finally {
+    activos -= 1;
+    const siguiente = enEspera.shift();
+    if (siguiente) siguiente();
+  }
+}
+
 /**
  * Descarga y analiza la fotografía. El archivo temporal se elimina siempre.
  * @returns {object} resultado normalizado (sin binario ni URLs).
@@ -424,16 +527,18 @@ async function analizarFoto(msg, { caption = null, chatId } = {}) {
     throw new VisionError('Demasiadas fotografías en poco tiempo', 'limite');
   }
 
-  const descarga = await descargarFotoTemporal(foto);
-  try {
-    return await pedirAnalisis({
-      ruta: descarga.ruta,
-      mime: descarga.mime,
-      caption: typeof caption === 'string' && caption.trim() ? caption.trim().slice(0, 1000) : null,
-    });
-  } finally {
-    await borrarTemporal(descarga.ruta);
-  }
+  return conLimite(async () => {
+    const descarga = await descargarFotoTemporal(foto);
+    try {
+      return await pedirAnalisis({
+        ruta: descarga.ruta,
+        mime: descarga.mime,
+        caption: typeof caption === 'string' && caption.trim() ? caption.trim().slice(0, 1000) : null,
+      });
+    } finally {
+      await borrarTemporal(descarga.ruta);
+    }
+  });
 }
 
 module.exports = {

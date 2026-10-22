@@ -8,10 +8,51 @@
 const config = require('./config');
 
 class GeminiError extends Error {
-  constructor(mensaje) {
+  constructor(mensaje, extra = {}) {
     super(mensaje);
     this.name = 'GeminiError';
+    this.http = extra.http ?? null;
+    this.modelo = extra.modelo ?? null;
+    this.codigo = extra.codigo ?? 'otro';
+    this.retryAfterMs = extra.retryAfterMs ?? null;
   }
+}
+
+/** Umbral para distinguir un 429 temporal de una cuota diaria/agotada. */
+const LIMITE_CORTO_MS = 2 * 60 * 1000;
+
+/** Lee Retry-After de cabecera o `retryDelay` ("6493s") del cuerpo de error. */
+function retryAfterMsDe(res, json) {
+  try {
+    const cabecera = res.headers?.get?.('retry-after');
+    if (cabecera) {
+      const segundos = Number(cabecera);
+      if (Number.isFinite(segundos) && segundos >= 0) return segundos * 1000;
+    }
+    const detalles = json?.error?.details;
+    if (Array.isArray(detalles)) {
+      for (const d of detalles) {
+        const valor = d?.retryDelay;
+        if (typeof valor === 'string') {
+          const m = valor.match(/^(\d+(?:\.\d+)?)s$/);
+          if (m) return Number(m[1]) * 1000;
+        }
+      }
+    }
+  } catch {
+    /* sin datos */
+  }
+  return null;
+}
+
+/** Clasifica un error HTTP de Gemini sin exponer detalles sensibles. */
+function clasificarHttp(status, retryAfterMs) {
+  if (status === 429) {
+    return retryAfterMs !== null && retryAfterMs > LIMITE_CORTO_MS ? 'cuota_diaria' : 'cuota';
+  }
+  if (status === 404) return 'modelo';
+  if (status >= 500) return 'servidor';
+  return 'otro';
 }
 
 const dormir = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -83,7 +124,10 @@ async function generar({ sistema, partes, esquema, temperatura = 0.2, reintentos
           body: JSON.stringify(cuerpo),
         });
       } catch (err) {
-        ultimoError = new GeminiError(`No se pudo conectar con Gemini: ${err.message}`);
+        ultimoError = new GeminiError(`No se pudo conectar con Gemini: ${err.message}`, {
+          modelo,
+          codigo: 'red',
+        });
         await dormir(1200 * intento);
         continue;
       }
@@ -92,22 +136,43 @@ async function generar({ sistema, partes, esquema, temperatura = 0.2, reintentos
 
       // El modelo ya no existe para esta cuenta: pasar al siguiente de inmediato.
       if (res.status === 404) {
-        ultimoError = new GeminiError(`El modelo ${modelo} no está disponible`);
+        ultimoError = new GeminiError(`El modelo ${modelo} no está disponible`, {
+          http: 404,
+          modelo,
+          codigo: 'modelo',
+        });
         break;
       }
 
       // 429 = límite de peticiones; 5xx = saturación temporal. Reintentar y, si
-      // no cede, probar el siguiente modelo.
+      // no cede, probar el siguiente modelo. Si la cuota es diaria/agotada
+      // (retryDelay largo) no se insiste: se pasa al siguiente modelo sin dormir.
       if (res.status === 429 || res.status >= 500) {
-        ultimoError = new GeminiError(
-          `${modelo} HTTP ${res.status}: ${texto.slice(0, 200)}`,
-        );
+        let jsonError = null;
+        try {
+          jsonError = JSON.parse(texto);
+        } catch {
+          jsonError = null;
+        }
+        const retryAfterMs = retryAfterMsDe(res, jsonError);
+        const codigo = clasificarHttp(res.status, retryAfterMs);
+        ultimoError = new GeminiError(`${modelo} HTTP ${res.status}`, {
+          http: res.status,
+          modelo,
+          codigo,
+          retryAfterMs,
+        });
+        if (codigo === 'cuota_diaria') break;
         await dormir(1200 * intento + Math.floor(Math.random() * 600));
         continue;
       }
 
       if (!res.ok) {
-        throw new GeminiError(`Gemini HTTP ${res.status}: ${texto.slice(0, 500)}`);
+        throw new GeminiError(`Gemini HTTP ${res.status}: ${texto.slice(0, 500)}`, {
+          http: res.status,
+          modelo,
+          codigo: clasificarHttp(res.status, null),
+        });
       }
 
       let json;

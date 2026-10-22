@@ -92,6 +92,8 @@ const config = {
   visionMaxBytes: Number(si('VISION_MAX_BYTES', 5 * 1024 * 1024)),
   visionTimeoutMs: Number(si('VISION_TIMEOUT_MS', 15000)),
   visionMaxPorChat: Number(si('VISION_MAX_POR_CHAT', 5)),
+  // Espera máxima que se respeta ante un 429 temporal (nunca bloquea el bucle).
+  visionRetryAfterMaxMs: Number(si('VISION_RETRY_AFTER_MAX_MS', 3000)),
 
   // Rutas
   dataDir: path.join(ROOT, 'data'),
