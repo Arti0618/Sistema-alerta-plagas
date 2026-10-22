@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acceso de coordinación · Alerta Plaga</title>
+  <link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+  <a class="saltar" href="#principal">Saltar al contenido</a>
+  <header class="barra">
+    <div class="contenedor barra__in">
+      <a class="marca" href="/">
+        <span class="marca__icono" aria-hidden="true">🛰️</span>
+        <span>
+          <span class="marca__titulo">Panel de Coordinaci?n</span>
+          <span class="marca__sub">Alerta Plaga · coordinación y técnicos</span>
+        </span>
+      </a>
+      <nav class="barra__nav" aria-label="Navegación">
+        <a class="enlace" href="/">Portada</a>
+        <a class="enlace" href="/acceso-productor">Soy productor</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="principal" class="acceso">
+    <div class="acceso__caja tarjeta">
+      <h1 style="margin-top:0;font-size:22px">Acceso de coordinación</h1>
+      <p class="ayuda">Introduce la contraseña del Panel de Coordinación. El acceso de técnicos se habilitará con su propia credencial.</p>
+
+      <form id="formCoord">
+        <div class="campo">
+          <label for="password">Contraseña</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="btn btn--cian" type="submit" id="btnEntrar">Entrar</button>
+      </form>
+
+      <p class="aviso aviso--mal" id="error" role="alert" hidden></p>
+    </div>
+  </main>
+
+  <script src="/acceso-coordinacion.js"></script>
+</body>
+</html>

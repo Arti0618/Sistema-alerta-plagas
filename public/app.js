@@ -92,8 +92,14 @@ const els = {
 /* Utilidades                                                          */
 /* ------------------------------------------------------------------ */
 
-async function api(ruta, opciones) {
-  const res = await fetch(ruta, opciones);
+let csrfToken = '';
+
+async function api(ruta, opciones = {}) {
+  const op = { credentials: 'same-origin', ...opciones };
+  if (op.method && op.method !== 'GET') {
+    op.headers = { ...(op.headers || {}), ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) };
+  }
+  const res = await fetch(ruta, op);
   let datos = {};
   try {
     datos = await res.json();
@@ -169,6 +175,21 @@ function etiquetaUrgencia(c) {
   if (c.plaga === 'desconocida') return { texto: 'sin aclarar', clase: 'e-neutra' };
   return { texto: '—', clase: 'e-neutra' };
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  fetch('/api/sesion', { credentials: 'same-origin' })
+    .then((r) => r.json())
+    .then((s) => {
+      if (s && s.csrf) csrfToken = s.csrf;
+    })
+    .catch(() => {});
+
+  const btn = document.getElementById('btnSalirPortal');
+  if (btn) btn.addEventListener('click', async () => {
+    await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+    location.replace('/');
+  });
+});
 
 /* ------------------------------------------------------------------ */
 /* Consultas                                                           */

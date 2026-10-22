@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bitácora · Panel de Coordinación</title>
+  <link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+  <a class="saltar" href="#principal">Saltar al contenido</a>
+  <header class="barra">
+    <div class="contenedor barra__in">
+      <a class="marca" href="/coordinacion">
+        <span class="marca__icono" aria-hidden="true">🛰️</span>
+        <span>
+          <span class="marca__titulo">Bitácora fitosanitaria</span>
+          <span class="marca__sub">Panel de Coordinación</span>
+        </span>
+      </a>
+      <nav class="barra__nav" aria-label="Navegación">
+        <a class="enlace" href="/coordinacion">Panel</a>
+        <a class="enlace" href="/coordinacion/bitacora" aria-current="page">Bitácora</a>
+        <button class="btn btn--fantasma" type="button" id="btnSalir">Cerrar sesión</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="principal" class="contenedor" style="padding:24px 0 60px">
+    <h1 style="font-size:22px;margin:0 0 6px">Actividad reciente</h1>
+    <p class="ayuda">Casos y avisos del sistema. Exporta la vista filtrada en CSV.</p>
+
+    <div class="tarjeta tarjeta--plana" style="margin-top:16px">
+      <div class="campo" style="max-width:420px">
+        <label for="buscar">Buscar por folio, parcela, cultivo o técnico</label>
+        <input id="buscar" type="search" placeholder="Ej.: parcela, maíz, folio…" autocomplete="off">
+      </div>
+      <button class="btn btn--fantasma" type="button" id="btnCsv">Exportar CSV</button>
+    </div>
+
+    <div style="overflow-x:auto;margin-top:18px">
+      <table aria-label="Bitácora de casos">
+        <thead>
+          <tr><th>Folio</th><th>Fecha</th><th>Parcela</th><th>Cultivo</th><th>Técnico</th><th>Semáforo</th><th>Estado</th></tr>
+        </thead>
+        <tbody id="filas">
+          <tr><td colspan="7"><div class="skeleton" style="width:60%"></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script src="/bitacora.js"></script>
+</body>
+</html>

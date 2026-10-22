@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mi campo · Alerta Plaga</title>
+  <link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+  <a class="saltar" href="#principal">Saltar al contenido</a>
+
+  <header class="barra">
+    <div class="contenedor barra__in">
+      <a class="marca" href="/">
+        <span class="marca__icono" aria-hidden="true">🌱</span>
+        <span>
+          <span class="marca__titulo">Mi campo</span>
+          <span class="marca__sub">Mi Campo</span>
+        </span>
+      </a>
+      <div class="barra__nav sesion">
+        <span class="avatar" id="avatar" aria-hidden="true">·</span>
+        <span>
+          <span id="nombre" style="font-weight:600">—</span><br>
+          <span class="ayuda" id="idParcial">—</span>
+        </span>
+        <button class="btn btn--fantasma" type="button" id="btnSalir">Cerrar sesión</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="principal" class="contenedor">
+    <div class="layout layout--dos">
+      <section aria-labelledby="tituloParcelas">
+        <h1 id="tituloParcelas" style="font-size:20px;margin:22px 0 12px">Mis parcelas</h1>
+        <p class="ayuda" id="sinParcelas" hidden>No tienes parcelas registradas.</p>
+        <div class="lista" id="parcelas"></div>
+
+        <h2 style="font-size:18px;margin:26px 0 12px">Mis casos</h2>
+        <div class="lista" id="casos" aria-live="polite">
+          <div class="skeleton" style="width:70%"></div>
+          <div class="skeleton" style="width:50%"></div>
+        </div>
+
+        <h2 style="font-size:18px;margin:26px 0 12px">Avisos y visitas</h2>
+        <div class="lista" id="avisos"></div>
+        <div class="lista" id="visitas" style="margin-top:10px"></div>
+
+        <h2 style="font-size:18px;margin:26px 0 12px">Alertas cercanas</h2>
+        <p class="ayuda">Información anónima de brotes en un radio de 5 km. No mostramos datos de otros productores.</p>
+        <div class="lista" id="alertas"></div>
+      </section>
+
+      <aside>
+        <section class="tarjeta" aria-labelledby="tituloReporte" style="margin-top:22px">
+          <h2 id="tituloReporte" style="font-size:18px">Reportar al asistente</h2>
+          <p class="ayuda">Cuéntanos qué ves. La orientación es preliminar y no sustituye la visita de un técnico.</p>
+
+          <form id="formReporte" novalidate>
+            <div class="campo" id="campoParcela">
+              <label for="parcelaSel">Parcela</label>
+              <select id="parcelaSel" required aria-describedby="ayudaParcela"></select>
+              <span class="ayuda" id="ayudaParcela">Solo aparecen tus parcelas.</span>
+            </div>
+            <div class="campo">
+              <label for="texto">¿Qué observas?</label>
+              <textarea id="texto" maxlength="2000" placeholder="Ej.: las hojas del maíz tienen manchas y hay gusanos en el cogollo"></textarea>
+            </div>
+            <div class="campo">
+              <label for="foto">Fotografía (opcional)</label>
+              <input id="foto" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="ayudaFoto">
+              <span class="ayuda" id="ayudaFoto">JPG, PNG o WEBP · máximo 5 MB. No se guarda la imagen.</span>
+            </div>
+            <div class="campo">
+              <label for="porcentaje">Porcentaje afectado (tu declaración)</label>
+              <input id="porcentaje" type="number" min="0" max="100" step="1" inputmode="numeric" placeholder="Ej.: 25">
+              <div style="display:flex;gap:8px;flex-wrap:wrap" role="group" aria-label="Porcentajes rápidos">
+                <button class="btn btn--fantasma" type="button" data-pct="10">10 %</button>
+                <button class="btn btn--fantasma" type="button" data-pct="25">25 %</button>
+                <button class="btn btn--fantasma" type="button" data-pct="50">50 %</button>
+                <button class="btn btn--fantasma" type="button" data-pct="100">100 %</button>
+              </div>
+              <span class="ayuda" id="hectareas">Hectáreas estimadas: —</span>
+            </div>
+            <button class="btn btn--verde" type="submit" id="btnEnviar">Enviar reporte</button>
+          </form>
+
+          <div class="aviso aviso--info" id="resultado" hidden aria-live="polite"></div>
+          <p class="aviso aviso--mal" id="error" role="alert" hidden></p>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <script src="/productor.js"></script>
+</body>
+</html>

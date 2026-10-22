@@ -596,8 +596,39 @@ async function analizarFoto(msg, { caption = null, chatId } = {}) {
   });
 }
 
+/**
+ * Analiza una imagen que ya est? en memoria (portal web).
+ * Sigue el mismo pipeline (proveedor, esquema, temporal) que Telegram.
+ */
+async function analizarBuffer(buffer, mime, { caption = null, chatId } = {}) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length) {
+    throw new VisionError('La imagen est? vac?a', 'descarga');
+  }
+  const permitido = Object.values(MIMES).includes(mime);
+  if (!permitido) throw new VisionError('Formato de imagen no permitido', 'formato');
+  if (config.visionMaxBytes && buffer.length > config.visionMaxBytes) {
+    throw new VisionError('La imagen excede el tama?o permitido', 'tamano');
+  }
+  if (chatId !== undefined && chatId !== null && !permitirAnalisis(chatId)) {
+    throw new VisionError('Demasiadas fotograf?as en poco tiempo', 'limite');
+  }
+  const extension = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
+  const ruta = path.join(deps.tmpdir(), `alerta-foto-${crypto.randomUUID()}.${extension}`);
+  await deps.fs.writeFile(ruta, buffer, { mode: 0o600 });
+  try {
+    return await pedirAnalisis({
+      ruta,
+      mime,
+      caption: typeof caption === 'string' && caption.trim() ? caption.trim().slice(0, 1000) : null,
+    });
+  } finally {
+    await borrarTemporal(ruta);
+  }
+}
+
 module.exports = {
   analizarFoto,
+  analizarBuffer,
   elegirFoto,
   mimePermitido,
   descargarFotoTemporal,
