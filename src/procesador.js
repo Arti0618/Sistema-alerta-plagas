@@ -22,6 +22,7 @@ const aprobaciones = require('./aprobaciones');
 const plazos = require('./plazos');
 const store = require('./store');
 const vinculacion = require('./vinculacion');
+const casosExternos = require('./casos-externos');
 const { dormir } = require('./gemini');
 const vision = require('./vision');
 
@@ -1126,6 +1127,8 @@ function registrarConsultaFoto(chatId, msg, caption, analisis, revision = null) 
   };
   store.agregarConsulta(consulta);
   store.incrementarMetrica('procesados');
+  // Caso externo local (solo si el chat está vinculado y hay parcela válida).
+  registrarCasoExternoSiAplica(consulta);
   // Se devuelve la orientación agronómica; el mensaje final (orientación +
   // conclusión administrativa) lo arma el servidor en responderFotoConAnalisis.
   return { id: consulta.id, texto: respuestaDeAnalisis(analisis) };
@@ -1136,6 +1139,37 @@ function respuestaFotoConEstado(analisisTexto, revision) {
     return respuestaAnalisisLocal(analisisTexto);
   }
   return respuestaSinVinculo(analisisTexto);
+}
+
+/**
+ * ¿La plaga interpretada es cuarentenaria? (Solo el catálogo lo sabe; si no
+ * hay catálogo, no se marca nada.)
+ */
+function consultaCuarentenaria(interpretacion) {
+  if (!interpretacion || !interpretacion.es_plaga || !interpretacion.plaga) return false;
+  try {
+    const plaga = agente.porId(interpretacion.plaga);
+    return Boolean(plaga && plaga.cuarentenaria);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Si el reporte viene de un chat vinculado y con parcela válida, se convierte
+ * en un CASO EXTERNO de Telegram: entra a la revisión local de coordinación,
+ * pero no es un caso oficial de la API (no tiene reporte_id ni folio oficial).
+ */
+function registrarCasoExternoSiAplica(consulta) {
+  if (!consulta) return null;
+  if (consulta.fuente !== 'telegram') return null;
+  if (!consulta.productor_id || !consulta.parcela_id) return null;
+  try {
+    return casosExternos.crearCasoExterno(consulta);
+  } catch (err) {
+    console.error(`[casos-externos] no se pudo registrar el caso local: ${err.message}`);
+    return null;
+  }
 }
 
 /** Analiza la foto y devuelve el texto de UNA sola respuesta. */
@@ -1313,7 +1347,11 @@ async function responderEnTelegram(chatId, textoUsuario, msg, { esFoto = false, 
     brote_cuenta: calc ? calc.broteCuenta : 0,
     brote_vecinos: calc ? calc.broteVecinos : [],
     requiere_revision_coordinacion: Boolean(
-      calc && (calc.brote === true || calc.semaforo === 'rojo' || calc.semaforo === 'naranja'),
+      calc &&
+        (calc.brote === true ||
+          calc.semaforo === 'rojo' ||
+          calc.semaforo === 'naranja' ||
+          Boolean(consultaCuarentenaria(interpretacion))),
     ),
     confianza: interpretacion.confianza,
     razon: interpretacion.razon,
@@ -1338,6 +1376,9 @@ async function responderEnTelegram(chatId, textoUsuario, msg, { esFoto = false, 
   }
   if (consulta.brote) store.incrementarMetrica('brotes');
 
+  // Caso externo local (solo si el chat está vinculado y hay parcela válida).
+  registrarCasoExternoSiAplica(consulta);
+
   return respuestaFinal;
 }
 
@@ -1356,9 +1397,44 @@ async function manejarCallback(cq) {
   const responder = (texto) =>
     telegram.responderCallback(cq.id, texto).catch(() => {});
 
-  // Callbacks de vinculación: no pasan por el flujo de aprobaciones.
-  if (accion === 'parcela' || accion === 'desvincular') {
+  // Callbacks de revisión de casos externos de Telegram (Telegram del
+  // coordinador). El nonce es de un solo uso y caduca; un callback no
+  // autorizado no modifica nada ni revela datos del reporte.
+  if (accion === 'ext') {
     try {
+      if (!casosExternos.esCoordinadorAutorizado(chatId)) {
+        console.error('[revision] callback no autorizado (evento sanitizado)');
+        return responder('Acción no disponible');
+      }
+      const [, subaccion, nonce] = datos.split(':');
+      if (!['aprobar', 'rechazar', 'tecnico'].includes(subaccion)) {
+        return responder('Acción no reconocida');
+      }
+      const caso = casosExternos.consumirNonceRevision(nonce);
+      if (!caso) return responder('La acción expiró; pide el caso de nuevo');
+      if (caso.estado_revision !== casosExternos.ESTADOS.pendiente) {
+        return responder('Ese caso ya no está pendiente');
+      }
+      const quien = 'coordinador';
+      if (subaccion === 'tecnico') {
+        const candidatos = await casosExternos.candidatosTecnico(caso);
+        if (!candidatos.length) return responder('No hay técnicos elegibles');
+        const elegido = candidatos[0];
+        const r = await casosExternos.cambiarTecnico(caso, elegido.id, quien);
+        if (!r.ok) return responder('No se pudo cambiar el técnico');
+        return responder('Técnico actualizado');
+      }
+      const r = await casosExternos.aprobar(caso, quien, { rechazar: subaccion === 'rechazar' });
+      if (!r.ok) return responder('No se pudo completar la acción');
+      return responder(subaccion === 'rechazar' ? 'Rechazado' : 'Aprobado');
+    } catch (err) {
+      console.error(`[revision] error al procesar el callback: ${err.message}`);
+      return responder('No se pudo completar');
+    }
+  }
+
+  // Callbacks de vinculación: no pasan por el flujo de aprobaciones.
+  if (accion === 'parcela' || accion === 'desvincular') {    try {
       const resultado = await vinculacion.procesarCallback(chatId, datos);
       if (!resultado) return responder('Acción no reconocida');
       if (resultado.texto) {

@@ -38,12 +38,18 @@ const consultas = [
 ];
 
 const almacen = new Map();
+const telegramChats = {};
 const store = {
   listaConsultas: () => consultas,
   obtenerConsulta: (id) => consultas.find((c) => c.id === id) || null,
-  getTelegram: () => ({ chats: {} }),
+  getTelegram: () => ({ chats: telegramChats }),
   agregarConsulta: (c) => {
     consultas.unshift(c);
+    return c;
+  },
+  actualizarConsulta(id, cambios) {
+    const c = store.obtenerConsulta(id);
+    if (c) Object.assign(c, cambios);
     return c;
   },
   getAlmacen: (clave, porDefecto = null) => (almacen.has(clave) ? almacen.get(clave) : porDefecto),
@@ -92,6 +98,18 @@ doble('tecnicos', {
       Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
     return 2 * r * Math.asin(Math.min(1, Math.sqrt(a)));
   },
+});
+
+/* Telegram simulado: ningún mensaje real sale de las pruebas. */
+const mensajesTelegram = [];
+doble('telegram', {
+  ...require(ruta('telegram')),
+  enviarMensaje: async (chatId, texto, extra = {}) => {
+    mensajesTelegram.push({ chatId: String(chatId), texto, extra });
+    return { message_id: 900 + mensajesTelegram.length, date: 1700000000, chat: { id: chatId, type: 'private' } };
+  },
+  responderCallback: async () => true,
+  editarMensaje: async () => true,
 });
 
 const portal = require(ruta('portal'));
@@ -483,7 +501,132 @@ test('ninguna respuesta contiene contraseñas ni claves', async () => {
   }
 });
 
-/* ------------------------- vinculación con Telegram ----------------------- */
+/* ------------------------- revisiones de coordinación ---------------------- */
+
+test('las revisiones exigen sesión de coordinador y no filtran datos sensibles', async () => {
+  almacen.clear();
+  const casosExternos = require(ruta('casos-externos'));
+  const consulta = {
+    id: 'TG-EXT-PRUEBA',
+    fuente: 'telegram',
+    productor_id: 'PR-1',
+    parcela_id: 'P-1',
+    parcela: 'Parcela de Prueba',
+    cultivo: 'maíz',
+    etapa: 'R2',
+    plaga: 'pulgon',
+    plaga_nombre: 'Pulgón',
+    porcentaje: 40,
+    prioridad: 73,
+    semaforo: 'naranja',
+    brote: true,
+    brote_cuenta: 4,
+    tecnico_id: 'T-1',
+    requiere_revision_coordinacion: true,
+    recibido: '2026-10-22T20:00:00Z',
+    registrado: false,
+    caso_oficial: false,
+  };
+  consultas.push(consulta);
+  casosExternos.crearCasoExterno(consulta);
+
+  const sinSesion = await peticion({ destino: '/api/coordinacion/revisiones' });
+  assert.strictEqual(sinSesion.statusCode, 401);
+
+  const { cookie } = cookieSesion({ rol: 'coordinador' });
+  const res = await peticion({ destino: '/api/coordinacion/revisiones', cookie });
+  assert.strictEqual(res.statusCode, 200);
+  const revision = json(res).revisiones.find((r) => r.id === 'TG-EXT-PRUEBA');
+  assert.ok(revision, 'el caso externo debe aparecer en revisiones');
+  assert.strictEqual(revision.origen, 'telegram_externo');
+  assert.strictEqual(revision.registro_oficial, 'No');
+  assert.strictEqual(revision.es_caso_oficial, false);
+  assert.ok(revision.folio_local.startsWith('TG-EXT-'));
+  assert.ok(!/chat_id|telegram_chat_hash|callback_data/.test(res.body));
+  assert.ok(!/Registrar caso oficial/i.test(res.body));
+});
+
+test('aprobar una revisión exige rol de coordinador y CSRF', async () => {
+  almacen.clear();
+  const casosExternos = require(ruta('casos-externos'));
+  const vinculacion = require(ruta('vinculacion'));
+  // Chat vinculado (para que el aviso al productor tenga canal) — sin chat_id
+  // en claro en el almacén: solo su HMAC.
+  telegramChats['601'] = { id: '601', type: 'private' };
+  almacen.set('telegram_vinculos', {
+    version: 1,
+    items: {
+      [vinculacion.hashChat('601')]: { productor_id: 'PR-1', revocado_en: null },
+    },
+  });
+  const consulta = {
+    id: 'TG-EXT-CSRF',
+    fuente: 'telegram',
+    productor_id: 'PR-1',
+    parcela_id: 'P-1',
+    semaforo: 'naranja',
+    prioridad: 73,
+    requiere_revision_coordinacion: true,
+    registrado: false,
+    caso_oficial: false,
+    recibido: '2026-10-22T20:00:00Z',
+  };
+  consultas.push(consulta);
+  casosExternos.crearCasoExterno(consulta);
+
+  const productor = cookieSesion({ rol: 'productor', productor_id: 'PR-1' });
+  const rolIncorrecto = await peticion({
+    metodo: 'POST',
+    destino: '/api/coordinacion/revision/TG-EXT-CSRF/aprobar',
+    cookie: productor.cookie,
+    csrf: productor.csrf,
+    cuerpo: {},
+  });
+  assert.strictEqual(rolIncorrecto.statusCode, 403);
+
+  const { cookie, csrf } = cookieSesion({ rol: 'coordinador' });
+  const sinCsrf = await peticion({
+    metodo: 'POST',
+    destino: '/api/coordinacion/revision/TG-EXT-CSRF/aprobar',
+    cookie,
+    cuerpo: {},
+  });
+  assert.strictEqual(sinCsrf.statusCode, 403);
+
+  const tipoMalo = await peticion({
+    metodo: 'POST',
+    destino: '/api/coordinacion/revision/TG-EXT-CSRF/aprobar',
+    cookie,
+    csrf,
+    cuerpo: {},
+    tipo: 'text/plain',
+  });
+  assert.strictEqual(tipoMalo.statusCode, 415);
+
+  const ok = await peticion({
+    metodo: 'POST',
+    destino: '/api/coordinacion/revision/TG-EXT-CSRF/aprobar',
+    cookie,
+    csrf,
+    cuerpo: {},
+  });
+  assert.strictEqual(ok.statusCode, 200);
+  const caso = casosExternos.deConsulta('TG-EXT-CSRF');
+  assert.strictEqual(caso.estado_revision, 'aprobada');
+
+  // Un segundo clic no vuelve a aprobar ni a avisar.
+  const antes = mensajesTelegram.length;
+  const repetido = await peticion({
+    metodo: 'POST',
+    destino: '/api/coordinacion/revision/TG-EXT-CSRF/aprobar',
+    cookie,
+    csrf,
+    cuerpo: {},
+  });
+  assert.strictEqual(repetido.statusCode, 409);
+  assert.strictEqual(mensajesTelegram.length, antes, 'no se repite el aviso');
+});
+
 
 test('el estado de Telegram exige sesión de productor y no revela el productor_id', async () => {
   almacen.clear();

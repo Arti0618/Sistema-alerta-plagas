@@ -20,6 +20,7 @@ const config = require('./config');
 const api = require('./alerta-api');
 const telegram = require('./telegram');
 const tecnicos = require('./tecnicos');
+const store = require('./store');
 
 /* ------------------------------------------------------------------ */
 /* 1. Aprobación del coordinador                                       */
@@ -45,6 +46,20 @@ function resumenCaso(c) {
   return lineas.join('\n').slice(0, 3500);
 }
 
+/**
+ * Clave de idempotencia de una notificacion: consulta + destinatario + tipo.
+ * Un segundo clic (o un reintento) no repite la misma notificacion.
+ */
+function claveNotificacion(consulta, destinatario, tipo) {
+  return `${consulta.id}|${destinatario}|${tipo}`;
+}
+
+/** ?Esta notificacion ya se hizo? */
+function yaHecha(consulta, destinatario, tipo) {
+  const lista = Array.isArray(consulta.notificaciones_enviadas) ? consulta.notificaciones_enviadas : [];
+  return lista.includes(claveNotificacion(consulta, destinatario, tipo));
+}
+
 /** Manda la alerta al coordinador con los botones y deja el caso pendiente. */
 async function solicitar(consulta, destino) {
   const texto = `${resumenCaso(consulta)}\n\n⏳ Pendiente de tu aprobación.`;
@@ -54,6 +69,11 @@ async function solicitar(consulta, destino) {
   consulta.aprobacion_estado = 'pendiente';
   consulta.aprobacion_chat_id = String(destino);
   consulta.aprobacion_msg_id = enviado.message_id;
+  store.actualizarConsulta(consulta.id, {
+    aprobacion_estado: 'pendiente',
+    aprobacion_chat_id: String(destino),
+    aprobacion_msg_id: enviado.message_id,
+  });
   return enviado;
 }
 
@@ -61,9 +81,15 @@ async function solicitar(consulta, destino) {
 async function enviarAvisos(consulta) {
   const folio = (consulta.caso && consulta.caso.caso) || `AP-${String(consulta.id).replace(/\D/g, '')}`;
   const resultados = { productor: false, tecnico: false, sanidad: false, vecinos: 0 };
+  const yaHechas = Array.isArray(consulta.notificaciones_enviadas)
+    ? consulta.notificaciones_enviadas.slice()
+    : [];
 
-  // Folio al productor
-  try {
+  // Folio al productor (idempotente: no se repite si ya se avisó).
+  if (yaHecha(consulta, consulta.productor_id, 'folio')) {
+    resultados.productor = true;
+  } else {
+    try {
     await api.enviarAviso({
       reporte_id: consulta.id,
       tipo: 'folio',
@@ -89,12 +115,16 @@ async function enviarAvisos(consulta) {
         .slice(0, 2000),
     });
     resultados.productor = true;
-  } catch (err) {
-    console.error(`[aprobacion] folio al productor ${consulta.id} falló: ${err.message}`);
+      yaHechas.push(claveNotificacion(consulta, consulta.productor_id, 'folio'));
+    } catch (err) {
+      console.error(`[aprobacion] folio al productor ${consulta.id} falló: ${err.message}`);
+    }
   }
 
   // Caso al técnico
-  if (consulta.tecnico_id) {
+  if (consulta.tecnico_id && yaHecha(consulta, consulta.tecnico_id, 'asignacion')) {
+    resultados.tecnico = true;
+  } else if (consulta.tecnico_id) {
     try {
       await api.enviarAviso({
         reporte_id: consulta.id,
@@ -113,13 +143,14 @@ async function enviarAvisos(consulta) {
           .slice(0, 2000),
       });
       resultados.tecnico = true;
+      yaHechas.push(claveNotificacion(consulta, consulta.tecnico_id, 'asignacion'));
     } catch (err) {
       console.error(`[aprobacion] aviso al técnico ${consulta.id} falló: ${err.message}`);
     }
   }
 
   // Sanidad vegetal, solo si es cuarentenaria
-  if (consulta.cuarentenaria) {
+  if (consulta.cuarentenaria && !consulta.sanidad_avisada) {
     try {
       await api.enviarAviso({
         reporte_id: consulta.id,
@@ -130,6 +161,7 @@ async function enviarAvisos(consulta) {
         } (${consulta.parcela_id}), productor ${consulta.productor}. Folio ${folio}.`,
       });
       resultados.sanidad = true;
+      yaHechas.push(claveNotificacion(consulta, 'sanidad_vegetal', 'cuarentenaria'));
     } catch (err) {
       console.error(`[aprobacion] aviso a sanidad vegetal ${consulta.id} falló: ${err.message}`);
     }
@@ -144,18 +176,46 @@ async function enviarAvisos(consulta) {
     }
   }
 
+  store.actualizarConsulta(consulta.id, { notificaciones_enviadas: yaHechas });
+
   return resultados;
 }
 
-/** El coordinador aprobó el caso. */
+/**
+ * El coordinador aprueba el caso.
+ *
+ * Idempotente: si ya estaba aprobado (o la aprobacion esta en curso) no se
+ * vuelve a avisar ni a generar folio. El estado se persiste ANTES de enviar
+ * los avisos, para que una caida no deje el caso en un estado ambiguo.
+ */
 async function aprobar(consulta, quien) {
-  if (consulta.aprobacion_estado === 'aprobado') {
+  if (consulta.aprobacion_estado === 'aprobado' || consulta.aprobacion_estado === 'aprobada') {
     return { ok: false, motivo: 'Ya estaba aprobado' };
   }
-  const resultados = await enviarAvisos(consulta);
-  consulta.aprobacion_estado = 'aprobado';
+  if (consulta.aprobacion_estado === 'aprobando') {
+    return { ok: false, motivo: 'La aprobacion ya esta en curso' };
+  }
+  const ahora = new Date().toISOString();
+  store.actualizarConsulta(consulta.id, {
+    aprobacion_estado: 'aprobando',
+    aprobacion_por: quien || null,
+    aprobacion_en: ahora,
+  });
+  consulta.aprobacion_estado = 'aprobando';
   consulta.aprobacion_por = quien || null;
-  consulta.aprobacion_en = new Date().toISOString();
+  consulta.aprobacion_en = ahora;
+
+  const resultados = await enviarAvisos(consulta);
+
+  store.actualizarConsulta(consulta.id, {
+    aprobacion_estado: 'aprobada',
+    aprobacion_por: quien || null,
+    aprobacion_en: ahora,
+    aviso_enviado: resultados.productor,
+    telegram_enviado: resultados.productor,
+    sanidad_avisada: resultados.sanidad || Boolean(consulta.sanidad_avisada),
+  });
+  consulta.aprobacion_estado = 'aprobada';
   return { ok: true, resultados };
 }
 

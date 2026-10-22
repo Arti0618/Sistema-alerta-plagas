@@ -14,6 +14,8 @@ const portal = require('./portal');
 const datos = require('./portal-datos');
 const store = require('./store');
 const vinculacion = require('./vinculacion');
+const casosExternos = require('./casos-externos');
+const aprobaciones = require('./aprobaciones');
 const agente = require('./agente');
 const reglas = require('./reglas');
 const vision = require('./vision');
@@ -559,7 +561,115 @@ function csvDeProductores(lista) {
   return [COLUMNAS_EXPORT.join(','), ...filas].join('\n');
 }
 
-function apiCoordinacion(req, res, url, sesion) {
+/* ------------------------------------------------------------------ */
+/* Revisiones: casos oficiales pendientes + casos externos de Telegram   */
+/* ------------------------------------------------------------------ */
+
+const limiteRevision = new Map();
+
+function permitirAccionRevision(sesion, accion) {
+  const clave = `revision:${sesion.id || 'coord'}:${accion}`;
+  const ahora = Date.now();
+  const entrada = limiteRevision.get(clave);
+  if (!entrada || ahora - entrada.inicio > 10 * 60 * 1000) {
+    limiteRevision.set(clave, { inicio: ahora, cuenta: 0 });
+  }
+  const estado = limiteRevision.get(clave);
+  if (estado.cuenta >= 30) return false;
+  estado.cuenta += 1;
+  return true;
+}
+
+/**
+ * Lista de revisiones: casos oficiales pendientes de aprobación y casos
+ * externos de Telegram (que NO son casos oficiales de la API).
+ */
+function listaRevisiones() {
+  const externas = casosExternos.listar().map((caso) => casosExternos.resumen(caso));
+  const oficiales = store
+    .listaConsultas()
+    .filter((c) => c.aprobacion_estado === 'pendiente' && c.fuente !== 'telegram')
+    .map((c) => ({
+      id: c.id,
+      origen: 'api',
+      origen_texto: 'Reporte oficial de la API',
+      folio: c.caso && c.caso.caso ? c.caso.caso : c.id,
+      folio_oficial: c.caso && c.caso.caso ? c.caso.caso : null,
+      registro_oficial: 'Sí',
+      es_caso_oficial: true,
+      estado_revision: 'pendiente',
+      aprobacion_estado: c.aprobacion_estado,
+      productor_id: c.productor_id,
+      parcela_id: c.parcela_id,
+      parcela: c.parcela,
+      cultivo: c.cultivo,
+      etapa: c.etapa,
+      plaga: c.plaga_nombre || c.plaga,
+      porcentaje: c.porcentaje,
+      prioridad: c.prioridad,
+      semaforo: c.semaforo,
+      tecnico_id_propuesto: c.tecnico_id,
+      tecnico_id_final: c.tecnico_id,
+      brote: c.brote ?? null,
+      brote_cuenta: c.brote_cuenta ?? null,
+      cuarentenaria: Boolean(c.cuarentenaria),
+      evidencia: 'Reporte de la API',
+      creado_en: c.recibido,
+      actualizado_en: c.recibido,
+      requiere_revision_coordinacion: true,
+      notificacion_productor_estado: c.registrado ? 'enviado' : 'pendiente',
+      notificacion_tecnico_estado: c.registrado ? 'enviado' : 'pendiente',
+      historial: 0,
+    }));
+  return [...externas, ...oficiales].sort((a, b) => String(b.creado_en || '').localeCompare(String(a.creado_en || '')));
+}
+
+/** Aplica una acción de revisión sobre un caso externo u oficial. */
+async function actuarRevision(res, id, accion, cuerpo, sesion) {
+  const caso = casosExternos.deConsulta(id);
+  const consulta = store.obtenerConsulta(id);
+  if (!caso && !consulta) return enviarJson(res, 404, { error: 'No encontrado' });
+  const quien = sesion.nombre || sesion.usuario || 'coordinador';
+
+  // Caso externo de Telegram.
+  if (caso) {
+    if (accion === 'aprobar' || accion === 'rechazar') {
+      const r = await casosExternos.aprobar(caso, quien, { rechazar: accion === 'rechazar' });
+      if (!r.ok) return enviarJson(res, 409, { error: r.motivo });
+      return enviarJson(res, 200, {
+        ok: true,
+        estado_revision: r.caso.estado_revision,
+        resultados: r.resultados,
+        folio_local: r.caso.folio_local,
+      });
+    }
+    if (accion === 'tecnico') {
+      const r = await casosExternos.cambiarTecnico(caso, String(cuerpo.tecnico_id || ''), quien);
+      if (!r.ok) return enviarJson(res, 409, { error: r.motivo });
+      return enviarJson(res, 200, { ok: true, caso: casosExternos.resumen(r.caso) });
+    }
+    if (accion === 'reintentar') {
+      const r = await casosExternos.reintentarNotificacion(caso, quien);
+      if (!r.ok) return enviarJson(res, 409, { error: r.motivo });
+      return enviarJson(res, 200, {
+        ok: true,
+        estado_revision: r.caso.estado_revision,
+        resultados: r.resultados,
+      });
+    }
+    return enviarJson(res, 400, { error: 'Acción no reconocida' });
+  }
+
+  // Caso oficial: el flujo existente (persistente e idempotente).
+  if (accion === 'aprobar') {
+    const r = await aprobaciones.aprobar(consulta, quien);
+    if (!r.ok) return enviarJson(res, 409, { error: r.motivo });
+    return enviarJson(res, 200, { ok: true, resultados: r.resultados });
+  }
+  return enviarJson(res, 400, { error: 'Acción no disponible para casos oficiales' });
+}
+
+async function apiCoordinacion(req, res, url, sesion) {
   const ruta = url.pathname.slice('/api/coordinacion/'.length);
   if (ruta === 'resumen' && req.method === 'GET') {
     return resumenCoordinacion().then((r) => enviarJson(res, 200, r));
@@ -616,6 +726,34 @@ function apiCoordinacion(req, res, url, sesion) {
   }
   if (ruta === 'bitacora' && req.method === 'GET') {
     return enviarJson(res, 200, { bitacora: bitacora(Number(url.searchParams.get('limite')) || 200) });
+  }
+
+  /* --------------------------- revisiones (casos) ------------------------- */
+  if (ruta === 'revisiones' && req.method === 'GET') {
+    return enviarJson(res, 200, { revisiones: listaRevisiones() });
+  }
+  const accionRevision = ruta.match(/^revision\/(.+)\/(aprobar|rechazar|tecnico|reintentar)$/);
+  if (accionRevision && req.method === 'POST') {
+    const id = decodeURIComponent(accionRevision[1]);
+    const accion = accionRevision[2];
+    // Solo el coordinador puede revisar (un técnico no).
+    if (!sesion || sesion.rol !== 'coordinador') {
+      return enviarJson(res, 403, { error: 'No autorizado' });
+    }
+    if (!esJson(req)) return enviarJson(res, 415, { error: 'Formato no admitido.' });
+    if (!portal.csrfValido(req, sesion)) {
+      return enviarJson(res, 403, { error: 'Token CSRF inválido.' });
+    }
+    if (!permitirAccionRevision(sesion, accion)) {
+      return enviarJson(res, 429, { error: 'Demasiadas solicitudes. Espera unos minutos.' });
+    }
+    let cuerpo = {};
+    try {
+      cuerpo = await leerJson(req, 4096);
+    } catch {
+      return enviarJson(res, 400, { error: 'Solicitud inválida.' });
+    }
+    return actuarRevision(res, id, accion, cuerpo, sesion);
   }
   return enviarJson(res, 404, { error: 'Ruta no encontrada' });
 }

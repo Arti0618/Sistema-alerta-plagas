@@ -110,6 +110,21 @@ function botonesDesvincular(nonce) {
   };
 }
 
+/**
+ * Botones de revisión para un caso externo de Telegram.
+ * El callback_data solo lleva un nonce temporal: nunca productor_id,
+ * parcela_id, chat_id ni folio.
+ */
+function botonesCasoExterno(nonce) {
+  return {
+    inline_keyboard: [
+      [{ text: 'Aprobar orientación', callback_data: `ext:aprobar:${nonce}` }],
+      [{ text: 'Cambiar técnico', callback_data: `ext:tecnico:${nonce}` }],
+      [{ text: 'Rechazar', callback_data: `ext:rechazar:${nonce}` }],
+    ],
+  };
+}
+
 /** Teclado con la lista de técnicos candidatos para reasignar. */
 function botonesTecnicos(reporteId, tecnicos) {
   const filas = tecnicos.slice(0, 10).map((t) => [
@@ -130,6 +145,7 @@ module.exports = {
   botonesAprobacion,
   botonesParcelas,
   botonesDesvincular,
+  botonesCasoExterno,
   botonesTecnicos,
   getMe: () => llamar('getMe'),
   eliminarWebhook: () => llamar('deleteWebhook', { drop_pending_updates: false }),

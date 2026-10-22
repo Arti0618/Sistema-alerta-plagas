@@ -46,6 +46,10 @@ const els = {
   buscar: $('buscar'),
   tablaCuerpo: $('tablaCuerpo'),
 
+  tabNumRevisiones: $('tabNumRevisiones'),
+  chipsRevisiones: $('chipsRevisiones'),
+  listaRevisiones: $('listaRevisiones'),
+
   chats: $('chats'),
   buscarChat: $('buscarChat'),
   tgTitulo: $('tgTitulo'),
@@ -1418,6 +1422,169 @@ async function probarAgente() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Revisiones de coordinación                                           */
+/* ------------------------------------------------------------------ */
+
+const REVISIONES = { datos: [], filtro: 'pendientes' };
+
+const ETIQUETA_REVISION = {
+  pendiente: 'Pendiente de coordinación',
+  aprobando: 'Aprobando',
+  aprobada: 'Aprobada',
+  rechazada: 'Rechazada',
+  aprobada_con_errores: 'Aprobada con errores',
+  error: 'Con error',
+  informativo: 'Informativo',
+};
+
+/** Agrupa las revisiones en las cuatro secciones del panel. */
+function seccionesRevisiones(revisiones) {
+  return {
+    pendientes: revisiones.filter((r) => r.estado_revision === 'pendiente'),
+    aprobadas: revisiones.filter((r) => r.estado_revision === 'aprobada'),
+    rechazadas: revisiones.filter((r) => r.estado_revision === 'rechazada'),
+    errores: revisiones.filter(
+      (r) => r.estado_revision === 'aprobada_con_errores' || r.estado_revision === 'error',
+    ),
+  };
+}
+
+/** Dibuja una revisión (caso externo u oficial). */
+function filaRevision(r) {
+  const fila = el('div', 'revision');
+  fila.dataset.id = r.id;
+  fila.dataset.origen = r.origen;
+
+  const cab = el('div', 'revision__cab');
+  const izquierda = el('div', 'revision__titulo');
+  izquierda.append(el('strong', '', r.folio || r.id));
+  izquierda.append(el('span', 'revision__origen', r.origen_texto || 'Origen desconocido'));
+  cab.append(izquierda);
+
+  const chip = el('span', `etiqueta ${r.es_caso_oficial ? 'e-verde' : 'e-neutra'}`);
+  chip.textContent = ETIQUETA_REVISION[r.estado_revision] || r.estado_revision || '—';
+  cab.append(chip);
+  fila.append(cab);
+
+  const cuerpo = el('div', 'revision__cuerpo');
+  const pares = [
+    ['Origen', r.origen_texto || '—'],
+    ['Registro oficial', r.registro_oficial === 'Sí' ? 'Sí' : 'No'],
+    ['Revisión', ETIQUETA_REVISION[r.estado_revision] || r.estado_revision || '—'],
+    ['Productor', r.productor_id || '—'],
+    ['Parcela', r.parcela ? `${r.parcela} (${r.parcela_id})` : r.parcela_id || '—'],
+    ['Cultivo', [r.cultivo, r.etapa].filter(Boolean).join(' · ') || '—'],
+    ['Plaga', r.plaga || '—'],
+    ['Porcentaje', r.porcentaje == null ? '—' : `${r.porcentaje} %`],
+    ['Prioridad', r.prioridad == null ? '—' : r.prioridad],
+    ['Semáforo', r.semaforo || '—'],
+    ['Técnico propuesto', r.tecnico_id_final || r.tecnico_id_propuesto || 'ninguno'],
+    ['Brote', r.brote === true ? `sí (${r.brote_cuenta ?? '?'})` : 'no'],
+    ['Tipo de evidencia', r.evidencia || '—'],
+    ['Fecha', r.creado_en ? new Date(r.creado_en).toLocaleString('es-MX') : '—'],
+  ];
+  if (r.es_caso_oficial === false) {
+    pares.splice(3, 0, ['Folio local', r.folio || '—']);
+  }
+  for (const [k, v] of pares) {
+    const d = el('div', 'revision__dato');
+    d.append(el('span', 'revision__k', k));
+    d.append(el('span', 'revision__v', String(v)));
+    cuerpo.append(d);
+  }
+  fila.append(cuerpo);
+
+  const acciones = el('div', 'revision__acciones');
+  if (r.estado_revision === 'pendiente') {
+    const aprobar = el('button', 'btn btn--verde', 'Aprobar orientación');
+    aprobar.type = 'button';
+    aprobar.addEventListener('click', () => accionRevision(r.id, 'aprobar', {}));
+    const cambiar = el('button', 'btn btn--cian', 'Cambiar técnico');
+    cambiar.type = 'button';
+    cambiar.addEventListener('click', () => accionRevision(r.id, 'tecnico', { pedir: true }));
+    const rechazar = el('button', 'btn btn--fantasma', 'Rechazar');
+    rechazar.type = 'button';
+    rechazar.addEventListener('click', () => accionRevision(r.id, 'rechazar', {}));
+    acciones.append(aprobar, cambiar, rechazar);
+  } else if (r.estado_revision === 'aprobada_con_errores' || r.estado_revision === 'error') {
+    const reintentar = el('button', 'btn btn--cian', 'Reintentar notificación');
+    reintentar.type = 'button';
+    reintentar.addEventListener('click', () => accionRevision(r.id, 'reintentar', {}));
+    acciones.append(reintentar);
+  }
+  if (r.notificacion_tecnico_estado === 'sin_canal_oficial') {
+    const nota = el('span', 'revision__nota', 'Técnico propuesto, aún no notificado');
+    acciones.append(nota);
+  }
+  if (acciones.childNodes.length) fila.append(acciones);
+
+  return fila;
+}
+
+/** Ejecuta una acción de revisión (aprobar / rechazar / técnico / reintentar). */
+async function accionRevision(id, accion, cuerpo) {
+  try {
+    if (accion === 'tecnico' && cuerpo.pedir) {
+      const d = await api(`/api/coordinacion/revision/${encodeURIComponent(id)}/tecnico`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tecnico_id: cuerpo.tecnico_id || '' }),
+      });
+      if (d.caso) {
+        aviso('Técnico actualizado', true);
+        await refrescarRevisiones();
+      }
+      return;
+    }
+    const d = await api(`/api/coordinacion/revision/${encodeURIComponent(id)}/${accion}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpo || {}),
+    });
+    aviso(accion === 'aprobar' ? 'Revisión aprobada' : 'Revisión actualizada', true);
+    if (d.estado_revision) {
+      const caso = REVISIONES.datos.find((r) => r.id === id);
+      if (caso) caso.estado_revision = d.estado_revision;
+    }
+    await refrescarRevisiones();
+  } catch (err) {
+    aviso(err.message || 'No se pudo completar la acción');
+  }
+}
+
+/** Carga y dibuja las revisiones. */
+async function refrescarRevisiones() {
+  if (!els.listaRevisiones) return;
+  try {
+    const d = await api('/api/coordinacion/revisiones');
+    REVISIONES.datos = d.revisiones || [];
+  } catch {
+    REVISIONES.datos = [];
+  }
+  const secciones = seccionesRevisiones(REVISIONES.datos);
+  if (els.tabNumRevisiones) {
+    els.tabNumRevisiones.textContent = secciones.pendientes.length;
+  }
+  const filtro = REVISIONES.filtro;
+  const lista = el('div', 'revision__seccion');
+  const titulos = {
+    pendientes: 'Pendientes',
+    aprobadas: 'Aprobadas',
+    rechazadas: 'Rechazadas',
+    errores: 'Con error',
+  };
+  const items = filtro === 'todas' ? REVISIONES.datos : secciones[filtro] || [];
+  lista.append(el('h3', 'revision__seccion-titulo', `${titulos[filtro] || filtro} (${items.length})`));
+  if (!items.length) {
+    lista.append(el('p', 'ayuda', 'No hay casos en esta sección.'));
+  } else {
+    for (const r of items) lista.append(filaRevision(r));
+  }
+  els.listaRevisiones.textContent = '';
+  els.listaRevisiones.append(lista);
+}
+
+/* ------------------------------------------------------------------ */
 /* Eventos                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -1429,8 +1596,21 @@ document.querySelectorAll('.tab').forEach((tab) => {
     S.vista = tab.dataset.vista;
     $(`vista-${S.vista}`).classList.add('is-active');
     if (S.vista === 'mapa') refrescarMapa();
+    if (S.vista === 'revisiones') refrescarRevisiones();
   });
 });
+
+if (els.chipsRevisiones) {
+  els.chipsRevisiones.addEventListener('click', (ev) => {
+    const chip = ev.target.closest('.chip');
+    if (!chip) return;
+    REVISIONES.filtro = chip.dataset.revision;
+    els.chipsRevisiones.querySelectorAll('.chip').forEach((c) => {
+      c.classList.toggle('is-active', c === chip);
+    });
+    refrescarRevisiones();
+  });
+}
 
 // Capas del mapa
 [els.capaBase, els.capaCasos, els.capaBrotes, els.capaTecnicos, els.capaRadio].forEach((c) => {

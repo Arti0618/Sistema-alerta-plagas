@@ -35,6 +35,7 @@
 
   <nav class="tabs">
     <button class="tab is-active" data-vista="consultas">Consultas <span class="tab__num" id="tabNumConsultas">0</span></button>
+    <button class="tab" data-vista="revisiones">Revisiones <span class="tab__num" id="tabNumRevisiones">0</span></button>
     <button class="tab" data-vista="mapa">Mapa</button>
     <button class="tab" data-vista="telegram">Telegram</button>
     <button class="tab" data-vista="pruebas">Pruebas y diagnóstico</button>
@@ -76,6 +77,24 @@
         </div>
         <div class="tabla__cuerpo" id="tablaCuerpo"></div>
       </div>
+    </section>
+
+    <!-- ------------------------------ REVISIONES ----------------------------- -->
+    <section class="vista" id="vista-revisiones">
+      <p class="ayuda">
+        Revisión de coordinación. Un <strong>caso externo de Telegram</strong> viene de un chat
+        vinculado con parcela activa: tiene folio local y <strong>no</strong> es un caso oficial
+        de la API del reto.
+      </p>
+
+      <div class="chips" id="chipsRevisiones">
+        <button class="chip is-active" data-revision="pendientes">Pendientes</button>
+        <button class="chip" data-revision="aprobadas">Aprobadas</button>
+        <button class="chip" data-revision="rechazadas">Rechazadas</button>
+        <button class="chip" data-revision="errores">Con error</button>
+      </div>
+
+      <div class="revisiones" id="listaRevisiones"></div>
     </section>
 
     <!-- ------------------------------ MAPA ------------------------------ -->
