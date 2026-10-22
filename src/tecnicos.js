@@ -49,20 +49,24 @@ function elegir(lista, especialidad, lat, lon) {
   );
   if (!candidatos.length) return null;
 
-  const conDistancia = candidatos.map((t) => ({
-    ...t,
-    distancia_km: distanciaAlMetro(lat, lon, t.lat, t.lon),
-  }));
+  // La comparación usa la distancia SIN redondear; el valor redondeado al
+  // metro es solo para mostrarlo. Redondear antes de comparar puede crear
+  // empates que no existen y elegir a otro técnico.
+  const conDistancia = candidatos.map((t) => {
+    const distancia = distanciaKm(lat, lon, t.lat, t.lon);
+    return { ...t, distancia_km: distanciaAlMetro(lat, lon, t.lat, t.lon), _distancia: distancia };
+  });
 
   conDistancia.sort((a, b) => {
-    if (a.distancia_km !== b.distancia_km) return a.distancia_km - b.distancia_km;
+    if (a._distancia !== b._distancia) return a._distancia - b._distancia;
     const cargaA = Number(a.carga || 0);
     const cargaB = Number(b.carga || 0);
     if (cargaA !== cargaB) return cargaA - cargaB;
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   });
 
-  return conDistancia[0];
+  const { _distancia, ...elegido } = conDistancia[0];
+  return elegido;
 }
 
 /** Consulta la API con la hora del mensaje y elige al técnico. */
@@ -82,17 +86,22 @@ async function candidatos(plaga, parcela, momento) {
 
   return (lista || [])
     .filter((t) => t.especialidad === plaga.especialidad && Number(t.carga || 0) < 5)
-    .map((t) => ({
-      ...t,
-      distancia_km: distanciaAlMetro(parcela.lat, parcela.lon, t.lat, t.lon),
-    }))
+    .map((t) => {
+      const distancia = distanciaKm(parcela.lat, parcela.lon, t.lat, t.lon);
+      return {
+        ...t,
+        distancia_km: distanciaAlMetro(parcela.lat, parcela.lon, t.lat, t.lon),
+        _distancia: distancia,
+      };
+    })
     .sort((a, b) => {
-      if (a.distancia_km !== b.distancia_km) return a.distancia_km - b.distancia_km;
+      if (a._distancia !== b._distancia) return a._distancia - b._distancia;
       const cargaA = Number(a.carga || 0);
       const cargaB = Number(b.carga || 0);
       if (cargaA !== cargaB) return cargaA - cargaB;
       return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-    });
+    })
+    .map(({ _distancia, ...resto }) => resto);
 }
 
 /* ------------------------------------------------------------------ */

@@ -1,0 +1,903 @@
+{
+ "nota": "Derivado de GET /casos-previos. Sin datos personales ni coordenadas reales (trasladadas).",
+ "plagas": [
+  {
+   "id": "gusano_cogollero",
+   "severidad": "alta",
+   "cuarentenaria": false,
+   "especialidad": "entomologia",
+   "etapas_criticas": {
+    "maíz": [
+     "V4",
+     "V6",
+     "V8",
+     "V10"
+    ]
+   },
+   "etapas_susceptibles": {
+    "maíz": [
+     "V2",
+     "V12",
+     "VT"
+    ]
+   }
+  },
+  {
+   "id": "roya_frijol",
+   "severidad": "alta",
+   "cuarentenaria": false,
+   "especialidad": "fitopatologia",
+   "etapas_criticas": {
+    "frijol": [
+     "R5",
+     "R6",
+     "R7"
+    ]
+   },
+   "etapas_susceptibles": {
+    "frijol": [
+     "V3",
+     "V4",
+     "R8"
+    ]
+   }
+  },
+  {
+   "id": "pulgon",
+   "severidad": "baja",
+   "cuarentenaria": false,
+   "especialidad": "entomologia",
+   "etapas_criticas": {
+    "avena": [
+     "embuche",
+     "espigamiento"
+    ],
+    "trigo": [
+     "embuche",
+     "espigamiento"
+    ],
+    "maíz": [
+     "VT",
+     "R1"
+    ],
+    "haba": [
+     "floración"
+    ]
+   },
+   "etapas_susceptibles": {
+    "avena": [
+     "encañe",
+     "grano lechoso"
+    ],
+    "trigo": [
+     "encañe",
+     "grano lechoso"
+    ],
+    "maíz": [
+     "V10",
+     "V12"
+    ],
+    "haba": [
+     "vegetativa",
+     "formación de vainas"
+    ]
+   }
+  },
+  {
+   "id": "gallina_ciega",
+   "severidad": "media",
+   "cuarentenaria": false,
+   "especialidad": "entomologia",
+   "etapas_criticas": {
+    "maíz": [
+     "VE",
+     "V2",
+     "V4"
+    ],
+    "frijol": [
+     "V1",
+     "V2"
+    ],
+    "avena": [
+     "plántula",
+     "amacollamiento"
+    ],
+    "haba": [
+     "emergencia"
+    ]
+   },
+   "etapas_susceptibles": {
+    "maíz": [
+     "V6",
+     "V8"
+    ],
+    "frijol": [
+     "V3",
+     "V4"
+    ],
+    "avena": [
+     "encañe"
+    ],
+    "haba": [
+     "vegetativa"
+    ]
+   }
+  },
+  {
+   "id": "tizon_tardio",
+   "severidad": "alta",
+   "cuarentenaria": false,
+   "especialidad": "fitopatologia",
+   "etapas_criticas": {
+    "papa": [
+     "desarrollo vegetativo",
+     "tuberización"
+    ],
+    "jitomate": [
+     "floración",
+     "fructificación"
+    ]
+   },
+   "etapas_susceptibles": {
+    "papa": [
+     "emergencia",
+     "llenado de tubérculo"
+    ],
+    "jitomate": [
+     "vegetativa"
+    ]
+   }
+  },
+  {
+   "id": "mosquita_blanca",
+   "severidad": "media",
+   "cuarentenaria": false,
+   "especialidad": "entomologia",
+   "etapas_criticas": {
+    "jitomate": [
+     "plántula",
+     "vegetativa"
+    ],
+    "frijol": [
+     "V2",
+     "V3",
+     "V4"
+    ]
+   },
+   "etapas_susceptibles": {
+    "jitomate": [
+     "floración"
+    ],
+    "frijol": [
+     "R5",
+     "R6"
+    ]
+   }
+  },
+  {
+   "id": "chapulin",
+   "severidad": "alta",
+   "cuarentenaria": false,
+   "especialidad": "entomologia",
+   "etapas_criticas": {
+    "maíz": [
+     "V4",
+     "V6"
+    ],
+    "frijol": [
+     "V2",
+     "V3",
+     "V4"
+    ],
+    "haba": [
+     "vegetativa"
+    ],
+    "avena": [
+     "amacollamiento"
+    ]
+   },
+   "etapas_susceptibles": {
+    "maíz": [
+     "V8",
+     "V10"
+    ],
+    "frijol": [
+     "R5"
+    ],
+    "haba": [
+     "floración"
+    ],
+    "avena": [
+     "encañe"
+    ]
+   }
+  },
+  {
+   "id": "mancha_chocolate",
+   "severidad": "media",
+   "cuarentenaria": false,
+   "especialidad": "fitopatologia",
+   "etapas_criticas": {
+    "haba": [
+     "floración",
+     "formación de vainas"
+    ]
+   },
+   "etapas_susceptibles": {
+    "haba": [
+     "vegetativa",
+     "llenado"
+    ]
+   }
+  },
+  {
+   "id": "hlb",
+   "severidad": "critica",
+   "cuarentenaria": true,
+   "especialidad": "fitopatologia",
+   "etapas_criticas": {
+    "limón": [
+     "brotación",
+     "floración",
+     "fructificación",
+     "fruto maduro"
+    ]
+   },
+   "etapas_susceptibles": {}
+  },
+  {
+   "id": "gorgojo_khapra",
+   "severidad": "critica",
+   "cuarentenaria": true,
+   "especialidad": "entomologia",
+   "etapas_criticas": {
+    "grano almacenado": [
+     "almacenamiento"
+    ]
+   },
+   "etapas_susceptibles": {}
+  }
+ ],
+ "casos": [
+  {
+   "id": "CP-01",
+   "plaga": "pulgon",
+   "cultivo": "avena",
+   "etapa": "espigamiento",
+   "superficie_ha": 5.3,
+   "pct": 25,
+   "recibido": "2026-10-12T06:10:36-06:00",
+   "lat": -19.19428,
+   "lon": 98.79053,
+   "esperado": {
+    "prioridad": 48,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-02",
+   "plaga": "pulgon",
+   "cultivo": "maíz",
+   "etapa": "VT",
+   "superficie_ha": 3.9,
+   "pct": 25,
+   "recibido": "2026-10-12T18:07:33-06:00",
+   "lat": -19.40734,
+   "lon": 98.90485,
+   "esperado": {
+    "prioridad": 46,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-03",
+   "plaga": "mancha_chocolate",
+   "cultivo": "haba",
+   "etapa": "vegetativa",
+   "superficie_ha": 3.9,
+   "pct": 100,
+   "recibido": "2026-10-13T07:05:22-06:00",
+   "lat": -19.53101,
+   "lon": 98.81376,
+   "esperado": {
+    "prioridad": 64,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-04",
+   "plaga": "roya_frijol",
+   "cultivo": "frijol",
+   "etapa": "R7",
+   "superficie_ha": 3.4,
+   "pct": 75,
+   "recibido": "2026-10-13T08:13:25-06:00",
+   "lat": -19.54297,
+   "lon": 98.90025,
+   "esperado": {
+    "prioridad": 81,
+    "semaforo": "naranja",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-05",
+   "plaga": "pulgon",
+   "cultivo": "avena",
+   "etapa": "embuche",
+   "superficie_ha": 2.5,
+   "pct": 75,
+   "recibido": "2026-10-13T08:58:07-06:00",
+   "lat": -19.68472,
+   "lon": 98.86634,
+   "esperado": {
+    "prioridad": 52,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-06",
+   "plaga": "gallina_ciega",
+   "cultivo": "frijol",
+   "etapa": "V3",
+   "superficie_ha": 4,
+   "pct": 10,
+   "recibido": "2026-10-13T15:23:00-06:00",
+   "lat": -19.46154,
+   "lon": 98.881,
+   "esperado": {
+    "prioridad": 43,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-07",
+   "plaga": "roya_frijol",
+   "cultivo": "frijol",
+   "etapa": "V3",
+   "superficie_ha": 2.6,
+   "pct": 75,
+   "recibido": "2026-10-13T20:33:09-06:00",
+   "lat": -19.52887,
+   "lon": 98.87204,
+   "esperado": {
+    "prioridad": 67,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-08",
+   "plaga": "gallina_ciega",
+   "cultivo": "maíz",
+   "etapa": "R3",
+   "superficie_ha": 1.8,
+   "pct": 25,
+   "recibido": "2026-10-14T07:17:15-06:00",
+   "lat": -19.37782,
+   "lon": 98.8328,
+   "esperado": {
+    "prioridad": 33,
+    "semaforo": "verde",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-09",
+   "plaga": "mosquita_blanca",
+   "cultivo": "frijol",
+   "etapa": "R9",
+   "superficie_ha": 2.6,
+   "pct": null,
+   "recibido": "2026-10-14T11:01:58-06:00",
+   "lat": -19.70152,
+   "lon": 98.85501,
+   "esperado": {
+    "prioridad": 32,
+    "semaforo": "verde",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-10",
+   "plaga": "roya_frijol",
+   "cultivo": "frijol",
+   "etapa": "R7",
+   "superficie_ha": 3.4,
+   "pct": null,
+   "recibido": "2026-10-14T13:30:58-06:00",
+   "lat": -19.54297,
+   "lon": 98.90025,
+   "esperado": {
+    "prioridad": 67,
+    "semaforo": "amarillo",
+    "brote": true
+   }
+  },
+  {
+   "id": "CP-11",
+   "plaga": "roya_frijol",
+   "cultivo": "frijol",
+   "etapa": "V1",
+   "superficie_ha": 1.2,
+   "pct": 50,
+   "recibido": "2026-10-14T14:07:32-06:00",
+   "lat": -19.55013,
+   "lon": 98.88489,
+   "esperado": {
+    "prioridad": 49,
+    "semaforo": "amarillo",
+    "brote": true
+   }
+  },
+  {
+   "id": "CP-12",
+   "plaga": "gusano_cogollero",
+   "cultivo": "maíz",
+   "etapa": "V10",
+   "superficie_ha": 3.3,
+   "pct": 50,
+   "recibido": "2026-10-14T21:58:04-06:00",
+   "lat": -19.50651,
+   "lon": 98.86475,
+   "esperado": {
+    "prioridad": 75,
+    "semaforo": "naranja",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-13",
+   "plaga": "pulgon",
+   "cultivo": "avena",
+   "etapa": "espigamiento",
+   "superficie_ha": 4.2,
+   "pct": null,
+   "recibido": "2026-10-15T07:11:11-06:00",
+   "lat": -19.53885,
+   "lon": 98.89659,
+   "esperado": {
+    "prioridad": 43,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-14",
+   "plaga": "pulgon",
+   "cultivo": "avena",
+   "etapa": "grano lechoso",
+   "superficie_ha": 3.2,
+   "pct": 100,
+   "recibido": "2026-10-15T09:21:39-06:00",
+   "lat": -19.64359,
+   "lon": 98.91716,
+   "esperado": {
+    "prioridad": 50,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-15",
+   "plaga": "pulgon",
+   "cultivo": "maíz",
+   "etapa": "VT",
+   "superficie_ha": 3.8,
+   "pct": 100,
+   "recibido": "2026-10-15T14:06:43-06:00",
+   "lat": -19.70871,
+   "lon": 98.77286,
+   "esperado": {
+    "prioridad": 64,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-16",
+   "plaga": "gusano_cogollero",
+   "cultivo": "maíz",
+   "etapa": "V6",
+   "superficie_ha": 6.9,
+   "pct": 75,
+   "recibido": "2026-10-15T17:14:55-06:00",
+   "lat": -19.5433,
+   "lon": 98.88232,
+   "esperado": {
+    "prioridad": 90,
+    "semaforo": "rojo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-17",
+   "plaga": "roya_frijol",
+   "cultivo": "frijol",
+   "etapa": "R8",
+   "superficie_ha": 1.3,
+   "pct": 100,
+   "recibido": "2026-10-15T18:16:05-06:00",
+   "lat": -19.43632,
+   "lon": 98.87916,
+   "esperado": {
+    "prioridad": 63,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-18",
+   "plaga": "gusano_cogollero",
+   "cultivo": "maíz",
+   "etapa": "V8",
+   "superficie_ha": 6.5,
+   "pct": 20,
+   "recibido": "2026-10-15T20:22:15-06:00",
+   "lat": -19.19107,
+   "lon": 98.80476,
+   "esperado": {
+    "prioridad": 73,
+    "semaforo": "naranja",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-19",
+   "plaga": "roya_frijol",
+   "cultivo": "frijol",
+   "etapa": "R8",
+   "superficie_ha": 4.4,
+   "pct": 30,
+   "recibido": "2026-10-15T21:56:40-06:00",
+   "lat": -19.54719,
+   "lon": 98.88781,
+   "esperado": {
+    "prioridad": 63,
+    "semaforo": "amarillo",
+    "brote": true
+   }
+  },
+  {
+   "id": "CP-20",
+   "plaga": "gallina_ciega",
+   "cultivo": "maíz",
+   "etapa": "V4",
+   "superficie_ha": 5,
+   "pct": null,
+   "recibido": "2026-10-16T09:43:46-06:00",
+   "lat": -19.48847,
+   "lon": 98.90377,
+   "esperado": {
+    "prioridad": 53,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-21",
+   "plaga": "gusano_cogollero",
+   "cultivo": "maíz",
+   "etapa": "V4",
+   "superficie_ha": 3.9,
+   "pct": 30,
+   "recibido": "2026-10-16T11:02:16-06:00",
+   "lat": -19.48927,
+   "lon": 98.86534,
+   "esperado": {
+    "prioridad": 72,
+    "semaforo": "naranja",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-22",
+   "plaga": "mosquita_blanca",
+   "cultivo": "frijol",
+   "etapa": "V3",
+   "superficie_ha": 4,
+   "pct": 50,
+   "recibido": "2026-10-16T13:57:56-06:00",
+   "lat": -19.46154,
+   "lon": 98.881,
+   "esperado": {
+    "prioridad": 63,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-23",
+   "plaga": "gusano_cogollero",
+   "cultivo": "maíz",
+   "etapa": "V10",
+   "superficie_ha": 7.9,
+   "pct": 75,
+   "recibido": "2026-10-16T15:06:32-06:00",
+   "lat": -19.48678,
+   "lon": 98.82207,
+   "esperado": {
+    "prioridad": 90,
+    "semaforo": "rojo",
+    "brote": true
+   }
+  },
+  {
+   "id": "CP-24",
+   "plaga": "gusano_cogollero",
+   "cultivo": "maíz",
+   "etapa": "V10",
+   "superficie_ha": 5.5,
+   "pct": 25,
+   "recibido": "2026-10-16T16:12:54-06:00",
+   "lat": -19.48667,
+   "lon": 98.85182,
+   "esperado": {
+    "prioridad": 74,
+    "semaforo": "naranja",
+    "brote": true
+   }
+  },
+  {
+   "id": "CP-25",
+   "plaga": "pulgon",
+   "cultivo": "maíz",
+   "etapa": "R3",
+   "superficie_ha": 4.7,
+   "pct": 100,
+   "recibido": "2026-10-16T18:10:15-06:00",
+   "lat": -19.70086,
+   "lon": 98.88083,
+   "esperado": {
+    "prioridad": 45,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-26",
+   "plaga": "pulgon",
+   "cultivo": "maíz",
+   "etapa": "R1",
+   "superficie_ha": 7.6,
+   "pct": null,
+   "recibido": "2026-10-17T10:46:09-06:00",
+   "lat": -19.68881,
+   "lon": 98.89268,
+   "esperado": {
+    "prioridad": 45,
+    "semaforo": "amarillo",
+    "brote": true
+   }
+  },
+  {
+   "id": "CP-27",
+   "plaga": "gusano_cogollero",
+   "cultivo": "maíz",
+   "etapa": "V10",
+   "superficie_ha": 4.9,
+   "pct": null,
+   "recibido": "2026-10-17T14:18:49-06:00",
+   "lat": -19.47507,
+   "lon": 98.87314,
+   "esperado": {
+    "prioridad": 68,
+    "semaforo": "amarillo",
+    "brote": true
+   }
+  },
+  {
+   "id": "CP-28",
+   "plaga": "mosquita_blanca",
+   "cultivo": "jitomate",
+   "etapa": "cosecha",
+   "superficie_ha": 0.13,
+   "pct": 20,
+   "recibido": "2026-10-17T15:31:46-06:00",
+   "lat": -19.6333,
+   "lon": 98.92857,
+   "esperado": {
+    "prioridad": 30,
+    "semaforo": "verde",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-29",
+   "plaga": "chapulin",
+   "cultivo": "maíz",
+   "etapa": "V8",
+   "superficie_ha": 1.4,
+   "pct": 50,
+   "recibido": "2026-10-17T16:54:58-06:00",
+   "lat": -19.57954,
+   "lon": 98.85755,
+   "esperado": {
+    "prioridad": 59,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-30",
+   "plaga": "roya_frijol",
+   "cultivo": "frijol",
+   "etapa": "V3",
+   "superficie_ha": 4,
+   "pct": 20,
+   "recibido": "2026-10-17T17:04:39-06:00",
+   "lat": -19.46154,
+   "lon": 98.881,
+   "esperado": {
+    "prioridad": 60,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-31",
+   "plaga": "chapulin",
+   "cultivo": "maíz",
+   "etapa": "V6",
+   "superficie_ha": 2.1,
+   "pct": 50,
+   "recibido": "2026-10-18T13:16:15-06:00",
+   "lat": -19.42821,
+   "lon": 98.88229,
+   "esperado": {
+    "prioridad": 72,
+    "semaforo": "naranja",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-32",
+   "plaga": "gusano_cogollero",
+   "cultivo": "maíz",
+   "etapa": "V6",
+   "superficie_ha": 7.4,
+   "pct": 20,
+   "recibido": "2026-10-18T13:30:34-06:00",
+   "lat": -19.52712,
+   "lon": 98.88667,
+   "esperado": {
+    "prioridad": 74,
+    "semaforo": "naranja",
+    "brote": true
+   }
+  },
+  {
+   "id": "CP-33",
+   "plaga": "gusano_cogollero",
+   "cultivo": "maíz",
+   "etapa": "R2",
+   "superficie_ha": 3.2,
+   "pct": 25,
+   "recibido": "2026-10-18T13:51:45-06:00",
+   "lat": -19.50564,
+   "lon": 98.90215,
+   "esperado": {
+    "prioridad": 50,
+    "semaforo": "amarillo",
+    "brote": true
+   }
+  },
+  {
+   "id": "CP-34",
+   "plaga": "pulgon",
+   "cultivo": "avena",
+   "etapa": "grano lechoso",
+   "superficie_ha": 4.8,
+   "pct": 50,
+   "recibido": "2026-10-18T15:03:51-06:00",
+   "lat": -19.54484,
+   "lon": 98.91538,
+   "esperado": {
+    "prioridad": 45,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-35",
+   "plaga": "gallina_ciega",
+   "cultivo": "maíz",
+   "etapa": "V8",
+   "superficie_ha": 4.5,
+   "pct": 100,
+   "recibido": "2026-10-18T17:35:04-06:00",
+   "lat": -19.62541,
+   "lon": 98.89692,
+   "esperado": {
+    "prioridad": 65,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-36",
+   "plaga": "gusano_cogollero",
+   "cultivo": "maíz",
+   "etapa": "R3",
+   "superficie_ha": 7.2,
+   "pct": 75,
+   "recibido": "2026-10-18T19:45:28-06:00",
+   "lat": -19.487,
+   "lon": 98.89092,
+   "esperado": {
+    "prioridad": 70,
+    "semaforo": "naranja",
+    "brote": true
+   }
+  },
+  {
+   "id": "CP-37",
+   "plaga": "gusano_cogollero",
+   "cultivo": "maíz",
+   "etapa": "V6",
+   "superficie_ha": 7.3,
+   "pct": 25,
+   "recibido": "2026-10-19T06:19:02-06:00",
+   "lat": -19.32181,
+   "lon": 98.89272,
+   "esperado": {
+    "prioridad": 76,
+    "semaforo": "naranja",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-38",
+   "plaga": "gallina_ciega",
+   "cultivo": "frijol",
+   "etapa": "R9",
+   "superficie_ha": 3.7,
+   "pct": 100,
+   "recibido": "2026-10-19T07:05:20-06:00",
+   "lat": -19.39524,
+   "lon": 98.90221,
+   "esperado": {
+    "prioridad": 53,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-39",
+   "plaga": "chapulin",
+   "cultivo": "avena",
+   "etapa": "plántula",
+   "superficie_ha": 6.4,
+   "pct": 30,
+   "recibido": "2026-10-19T07:07:53-06:00",
+   "lat": -19.41769,
+   "lon": 98.88876,
+   "esperado": {
+    "prioridad": 57,
+    "semaforo": "amarillo",
+    "brote": false
+   }
+  },
+  {
+   "id": "CP-40",
+   "plaga": "gusano_cogollero",
+   "cultivo": "maíz",
+   "etapa": "V2",
+   "superficie_ha": 7.5,
+   "pct": null,
+   "recibido": "2026-10-19T13:52:35-06:00",
+   "lat": -19.49051,
+   "lon": 98.8864,
+   "esperado": {
+    "prioridad": 60,
+    "semaforo": "amarillo",
+    "brote": true
+   }
+  }
+ ]
+}

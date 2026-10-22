@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "configurar": "node configurar.js"
+    "configurar": "node configurar.js",
+    "test": "node --test pruebas-nivel2/*.test.js pruebas-telegram/*.test.js pruebas-oficiales/*.test.js pruebas-panel/*.test.js"
   },
   "engines": {
     "node": ">=18"

@@ -1,0 +1,611 @@
+'use strict';
+
+/**
+ * Análisis visual de fotografías de Telegram (preliminar, nunca confirmatorio).
+ *
+ * Reglas de seguridad:
+ *  - Solo imágenes (jpg/png/webp) dentro de un límite de tamaño.
+ *  - Descarga a un archivo temporal con permisos 600 que SIEMPRE se borra.
+ *  - Nunca se registra el token, la URL de descarga ni el contenido binario.
+ *  - El resultado no confirma plagas: usa «posible», «compatible con»,
+ *    «requiere confirmación».
+ */
+
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const crypto = require('node:crypto');
+
+const config = require('./config');
+const telegram = require('./telegram');
+const gemini = require('./gemini');
+const openrouter = require('./openrouter');
+
+const MIMES = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+};
+
+class VisionError extends Error {
+  constructor(mensaje, codigo) {
+    super(mensaje);
+    this.name = 'VisionError';
+    this.codigo = codigo || 'vision';
+  }
+}
+
+/* Dependencias (se pueden sustituir en las pruebas; nunca se exponen al panel). */
+const deps = {
+  fetch: (...args) => fetch(...args),
+  getFile: (fileId) => telegram.getFile(fileId),
+  urlArchivo: (ruta) => telegram.urlArchivo(ruta),
+  generar: (opciones) => gemini.generar(opciones),
+  generarOpenRouter: (opciones) => openrouter.generar(opciones),
+  parteInline: (buffer, mime) => gemini.parteInline(buffer, mime),
+  dormir: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  fs,
+  tmpdir: () => os.tmpdir(),
+};
+
+function _setDependencias(nuevas = {}) {
+  Object.assign(deps, nuevas);
+}
+
+/* ------------------------------------------------------------------ */
+/* Selección y validación de la fotografía                             */
+/* ------------------------------------------------------------------ */
+
+/** Elige la variante de mayor resolución que quepa en el límite de tamaño. */
+function elegirFoto(fotos) {
+  if (!Array.isArray(fotos) || !fotos.length) return null;
+  const limite = Number(config.visionMaxBytes) || 0;
+  const validas = fotos.filter(
+    (f) =>
+      f &&
+      f.file_id &&
+      (!limite || !f.file_size || Number(f.file_size) <= limite) &&
+      Number.isFinite(Number(f.width)) &&
+      Number.isFinite(Number(f.height)),
+  );
+  if (!validas.length) return null;
+  return validas
+    .slice()
+    .sort((a, b) => Number(b.width) * Number(b.height) - Number(a.width) * Number(a.height))[0];
+}
+
+/** Devuelve el MIME permitido según la extensión del file_path de Telegram. */
+function mimePermitido(filePath) {
+  const ext = String(filePath || '')
+    .split('.')
+    .pop()
+    .toLowerCase();
+  return MIMES[ext] || null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Descarga a archivo temporal seguro                                  */
+/* ------------------------------------------------------------------ */
+
+async function descargarFotoTemporal(foto) {
+  if (!config.visionHabilitado) {
+    throw new VisionError('El análisis visual está deshabilitado', 'deshabilitado');
+  }
+
+  let info;
+  try {
+    info = await deps.getFile(foto.file_id);
+  } catch {
+    throw new VisionError('No se pudo obtener la fotografía de Telegram', 'descarga');
+  }
+
+  const mime = mimePermitido(info?.file_path);
+  if (!mime) throw new VisionError('Formato de imagen no permitido', 'formato');
+
+  const limite = Number(config.visionMaxBytes) || 0;
+  if (limite && Number(info.file_size) > limite) {
+    throw new VisionError('La imagen excede el tamaño permitido', 'tamano');
+  }
+
+  const buffer = await descargarBinario(info, limite);
+
+  const extension = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
+  const ruta = path.join(deps.tmpdir(), `alerta-foto-${crypto.randomUUID()}.${extension}`);
+  await deps.fs.writeFile(ruta, buffer, { mode: 0o600 });
+  return { ruta, mime, bytes: buffer.length };
+}
+
+/* ------------------------- descarga con reintentos ------------------------- */
+
+const INTENTOS_MAX = 2;
+const ESPERA_REINTENTO_MS = 800;
+const MAX_ESPERA_429_MS = 3000; // nunca esperar indefinidamente
+const HTTP_REINTENTABLES = new Set([429, 500, 502, 503, 504]);
+
+/** Registro sanitizado: sin token, URL, file_path, file_id ni contenido. */
+function registrarDescarga({ intento, http, duracion, categoria }) {
+  console.log(
+    `[vision] etapa=descarga intento=${intento} http=${http === null ? '-' : http} ` +
+      `duracion_ms=${duracion} categoria=${categoria}`,
+  );
+}
+
+function esTimeout(err) {
+  return Boolean(err && (err.name === 'AbortError' || /abort|timeout/i.test(String(err.message))));
+}
+
+/** Lee retry_after (cabecera o cuerpo JSON de Telegram) con tope seguro. */
+async function leerRetryAfter(res) {
+  try {
+    const crudo = res?.headers?.get?.('retry-after');
+    if (crudo !== null && crudo !== undefined && String(crudo).trim() !== '') {
+      const cabecera = Number(crudo);
+      if (Number.isFinite(cabecera) && cabecera >= 0) return cabecera;
+    }
+    const cuerpo = await res.text();
+    const datos = JSON.parse(cuerpo);
+    const segundos = Number(datos?.parameters?.retry_after);
+    return Number.isFinite(segundos) && segundos >= 0 ? segundos : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Descarga el binario con 2 intentos como máximo.
+ * Reintenta solo ante red transitoria, 429 y 5xx (500/502/503/504).
+ * Cada intento tiene su propio timeout.
+ */
+async function descargarBinario(info, limite) {
+  let ultimoError = null;
+
+  for (let intento = 1; intento <= INTENTOS_MAX; intento++) {
+    const inicio = Date.now();
+    const control = new AbortController();
+    const temporizador = setTimeout(
+      () => control.abort(),
+      Number(config.visionTimeoutMs) || 15000,
+    );
+    let http = null;
+    let categoria = null;
+    let espera = ESPERA_REINTENTO_MS;
+
+    try {
+      // La URL lleva el token del bot: se usa solo aquí y no se registra.
+      const res = await deps.fetch(deps.urlArchivo(info.file_path), { signal: control.signal });
+      http = res.status;
+
+      if (res.ok) {
+        const buffer = Buffer.from(await res.arrayBuffer());
+        if (!buffer.length) {
+          throw new VisionError('La imagen llegó vacía', 'descarga_red');
+        }
+        if (limite && buffer.length > limite) {
+          throw new VisionError('La imagen excede el tamaño permitido', 'tamano');
+        }
+        registrarDescarga({ intento, http, duracion: Date.now() - inicio, categoria: 'ok' });
+        return buffer;
+      }
+
+      categoria = 'descarga_http';
+      ultimoError = new VisionError('No se pudo descargar la fotografía', 'descarga_http');
+      if (http === 429) {
+        const retryAfter = await leerRetryAfter(res);
+        if (retryAfter !== null) {
+          espera = Math.min(MAX_ESPERA_429_MS, Math.max(0, retryAfter * 1000));
+        }
+      }
+    } catch (err) {
+      if (err instanceof VisionError && err.codigo === 'tamano') {
+        clearTimeout(temporizador);
+        throw err; // nunca se reintenta un tamaño excesivo
+      }
+      if (esTimeout(err)) {
+        categoria = 'timeout';
+        ultimoError = new VisionError('La descarga de la fotografía tardó demasiado', 'timeout');
+      } else {
+        categoria = 'descarga_red';
+        ultimoError = new VisionError('No se pudo descargar la fotografía', 'descarga_red');
+      }
+    } finally {
+      clearTimeout(temporizador);
+    }
+
+    registrarDescarga({ intento, http, duracion: Date.now() - inicio, categoria });
+
+    const reintentar =
+      categoria === 'descarga_red' ||
+      (categoria === 'descarga_http' && HTTP_REINTENTABLES.has(http));
+
+    if (!reintentar || intento >= INTENTOS_MAX) throw ultimoError;
+    await deps.dormir(espera);
+  }
+
+  throw ultimoError || new VisionError('No se pudo descargar la fotografía', 'descarga_red');
+}
+
+async function borrarTemporal(ruta) {
+  if (!ruta) return;
+  try {
+    await deps.fs.unlink(ruta);
+  } catch {
+    /* si ya no existe, no hay nada que hacer */
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Análisis con el modelo multimodal                                   */
+/* ------------------------------------------------------------------ */
+
+const SISTEMA = `Eres ingeniero de sanidad vegetal de la Junta Local de Sanidad Vegetal.
+Analizas FOTOGRAFÍAS de cultivos para dar una orientación PRELIMINAR.
+Reglas obligatorias:
+- NUNCA confirmas una plaga o enfermedad con una sola fotografía: usa expresiones como
+  "posible", "compatible con" o "requiere confirmación de un técnico".
+- No inventas datos: si la imagen no permite verlo, dilo.
+- No contradices al productor de forma tajante; si el texto y la imagen no coinciden,
+  indícalo de forma neutral ("lo descrito no coincide del todo con lo observable").
+- El porcentaje afectado solo se estima si es razonablemente visible; si no, usa null.
+- Respondes SIEMPRE en JSON válido, en español y sin markdown.`;
+
+const ESQUEMA = {
+  type: 'OBJECT',
+  properties: {
+    material_vegetal: {
+      type: 'BOOLEAN',
+      description: 'true si la imagen muestra material vegetal útil para análisis.',
+    },
+    suficiente: {
+      type: 'BOOLEAN',
+      description: 'true si la imagen permite una orientación preliminar.',
+    },
+    cultivo_posible: {
+      type: 'STRING',
+      description: 'Cultivo probable solo si hay evidencia suficiente; si no, cadena vacía.',
+    },
+    plaga_posible: {
+      type: 'STRING',
+      description: 'Posible plaga o daño (preliminar). Cadena vacía si no se puede inferir.',
+    },
+    senales: {
+      type: 'ARRAY',
+      items: { type: 'STRING' },
+      description: 'Señales visuales observadas (máximo 6).',
+    },
+    porcentaje_estimado: {
+      type: 'NUMBER',
+      description: 'Porcentaje aproximado 0-100, o -1 si no puede estimarse.',
+    },
+    confianza: { type: 'NUMBER', description: 'Confianza entre 0 y 1.' },
+    necesita_mas: {
+      type: 'ARRAY',
+      items: { type: 'STRING' },
+      description: 'Qué información o fotografías adicionales hacen falta.',
+    },
+    advertencia: { type: 'STRING', description: 'Aclaración de que el resultado es preliminar.' },
+  },
+  required: ['material_vegetal', 'suficiente', 'confianza'],
+};
+
+function texto(valor, max) {
+  return typeof valor === 'string' ? valor.trim().slice(0, max) : '';
+}
+
+function lista(valor, max, largo) {
+  return Array.isArray(valor)
+    ? valor
+        .filter((v) => typeof v === 'string' && v.trim())
+        .slice(0, max)
+        .map((v) => v.trim().slice(0, largo))
+    : [];
+}
+
+/** Normaliza y acota la respuesta del modelo. */
+function normalizarResultado(crudo) {
+  if (!crudo || typeof crudo !== 'object') {
+    throw new VisionError('El modelo devolvió una respuesta inválida', 'respuesta');
+  }
+  const material = crudo.material_vegetal === true;
+  const suficiente = crudo.suficiente === true && material;
+  const pct = Number(crudo.porcentaje_estimado);
+  const confianza = Number(crudo.confianza);
+
+  return {
+    material_vegetal: material,
+    suficiente,
+    cultivo_posible: suficiente ? texto(crudo.cultivo_posible, 60) || null : null,
+    plaga_posible: suficiente ? texto(crudo.plaga_posible, 80) || null : null,
+    senales: lista(crudo.senales, 6, 120),
+    porcentaje_estimado: suficiente && Number.isFinite(pct) && pct >= 0 && pct <= 100
+      ? Math.round(pct)
+      : null,
+    confianza: Number.isFinite(confianza) ? Math.min(1, Math.max(0, confianza)) : 0,
+    necesita_mas: lista(crudo.necesita_mas, 4, 120),
+    advertencia:
+      texto(crudo.advertencia, 200) ||
+      'Resultado preliminar: no sustituye la revisión de un técnico.',
+  };
+}
+
+function promptAnalisis(caption) {
+  const base = [
+    'Analiza la fotografía adjunta de un cultivo y devuelve el JSON del esquema.',
+    'Recuerda: orientación preliminar, nunca confirmación.',
+  ];
+  if (caption) {
+    base.push(
+      `El productor escribió: "${caption}".`,
+      'Contrasta ese texto con lo observable. No des por cierta la plaga que menciona;',
+      'si hay contradicción, indícalo de forma neutral.',
+    );
+  } else {
+    base.push('No hay texto del productor: basa todo en la imagen.');
+  }
+  return base.join('\n');
+}
+
+async function pedirAnalisis({ ruta, mime, caption }) {
+  let buffer;
+  try {
+    buffer = await deps.fs.readFile(ruta);
+  } catch {
+    throw new VisionError('No se pudo leer la fotografía temporal', 'descarga');
+  }
+
+  const partes = [{ text: promptAnalisis(caption) }, deps.parteInline(buffer, mime)];
+  const proveedores = cadenaProveedores();
+  if (!proveedores.length) {
+    throw new VisionError('No hay proveedor de análisis visual configurado', 'analisis');
+  }
+
+  let ultimoError = null;
+  let ultimoProveedor = null;
+
+  for (const p of proveedores) {
+    let categoriaProveedor = null;
+
+    for (let i = 0; i < p.modelos.length; i++) {
+      const modelo = p.modelos[i];
+      const inicioIntento = Date.now();
+      try {
+        const respuesta = await p.generar({
+          sistema: SISTEMA,
+          partes,
+          esquema: ESQUEMA,
+          temperatura: 0.1,
+          reintentos: 1,
+          modelos: [modelo],
+        });
+        registrarAnalisis({
+          proveedor: p.proveedor,
+          modelo,
+          http: 200,
+          categoria: 'ok',
+          duracion: Date.now() - inicioIntento,
+        });
+        return interpretarRespuesta(respuesta, modelo, p.proveedor);
+      } catch (err) {
+        // Un problema de formato de la respuesta no es un fallo del modelo:
+        // no se reintenta ni se cambia de modelo/proveedor.
+        if (err instanceof VisionError) throw err;
+        const categoria = err?.codigo || 'proveedor';
+        registrarAnalisis({
+          proveedor: p.proveedor,
+          modelo,
+          http: err?.http ?? null,
+          categoria,
+          duracion: Date.now() - inicioIntento,
+        });
+        ultimoError = err;
+        ultimoProveedor = p.proveedor;
+        categoriaProveedor = categoria;
+
+        // Un único reintento controlado: solo cuota TEMPORAL y sin alternativas.
+        const temporal = err?.http === 429 && categoria === 'cuota';
+        const sinAlternativas = proveedores.length === 1 && p.modelos.length === 1;
+        if (temporal && sinAlternativas) {
+          const espera = Math.min(
+            Number(config.visionRetryAfterMaxMs) || 3000,
+            Math.max(0, Number(err.retryAfterMs) || 800),
+          );
+          await deps.dormir(espera);
+          const reintento = Date.now();
+          try {
+            const respuesta = await p.generar({
+              sistema: SISTEMA,
+              partes,
+              esquema: ESQUEMA,
+              temperatura: 0.1,
+              reintentos: 1,
+              modelos: [modelo],
+            });
+            registrarAnalisis({
+              proveedor: p.proveedor,
+              modelo,
+              http: 200,
+              categoria: 'ok',
+              duracion: Date.now() - reintento,
+            });
+            return interpretarRespuesta(respuesta, modelo, p.proveedor);
+          } catch (err2) {
+            registrarAnalisis({
+              proveedor: p.proveedor,
+              modelo,
+              http: err2?.http ?? null,
+              categoria: err2?.codigo || 'proveedor',
+              duracion: Date.now() - reintento,
+            });
+            ultimoError = err2;
+            categoriaProveedor = err2?.codigo || 'proveedor';
+          }
+        }
+      }
+    }
+
+    // Solo se cae al proveedor de respaldo ante fallos reintentables del servicio.
+    if (!CATEGORIAS_RESPALDO.has(categoriaProveedor)) break;
+  }
+
+  const mensaje = String(ultimoError?.message || '');
+  const codigo = /timeout|abort|tiempo/i.test(mensaje) ? 'timeout' : 'analisis';
+  // Mensaje controlado: nunca se propaga el detalle de la URL ni del binario.
+  throw new VisionError('No se pudo analizar la imagen', codigo);
+}
+
+/** Proveedores a intentar, en orden (principal y respaldo opcional). */
+function cadenaProveedores() {
+  const nombres = [config.visionProvider, config.visionProviderFallback]
+    .map((n) => String(n || '').toLowerCase())
+    .filter(Boolean);
+  const salida = [];
+  for (const nombre of nombres) {
+    if (salida.some((p) => p.proveedor === nombre)) continue;
+    if (nombre === 'openrouter') {
+      if (!config.openrouterKey) continue;
+      salida.push({
+        proveedor: 'openrouter',
+        modelos: (config.openrouterModelos || [config.openrouterModel]).filter(Boolean),
+        generar: (opciones) => deps.generarOpenRouter(opciones),
+      });
+    } else if (nombre === 'gemini') {
+      salida.push({
+        proveedor: 'gemini',
+        modelos: (config.visionModelos || [config.visionModel]).filter(Boolean),
+        generar: (opciones) => deps.generar(opciones),
+      });
+    }
+  }
+  return salida;
+}
+
+/** Categorías que permiten pasar al proveedor de respaldo. */
+const CATEGORIAS_RESPALDO = new Set(['cuota', 'cuota_diaria', 'modelo', 'timeout', 'servidor']);
+
+/** Registro sanitizado del análisis: sin prompt, imagen, clave ni URL. */
+function registrarAnalisis({ proveedor, modelo, http, categoria, duracion }) {
+  console.log(
+    `[vision] etapa=analisis proveedor=${proveedor} modelo=${modelo} ` +
+      `http=${http === null ? '-' : http} categoria=${categoria} duracion_ms=${duracion}`,
+  );
+}
+
+/** Valida y normaliza la respuesta del modelo. */
+function interpretarRespuesta(respuesta, modelo, proveedor) {
+  let crudo;
+  try {
+    crudo = JSON.parse(respuesta.texto);
+  } catch {
+    throw new VisionError('El modelo devolvió una respuesta inválida', 'respuesta');
+  }
+  const normalizado = normalizarResultado(crudo);
+  return {
+    ...normalizado,
+    modelo: respuesta.modelo || modelo || config.visionModel,
+    proveedor: respuesta.proveedor || proveedor || config.visionProvider,
+    // Solo tokens y costo numérico: nada de metadatos del proveedor.
+    uso: respuesta.uso
+      ? {
+          tokens_entrada: respuesta.uso.tokens_entrada ?? null,
+          tokens_salida: respuesta.uso.tokens_salida ?? null,
+          costo_usd: respuesta.uso.costo_usd ?? null,
+        }
+      : null,
+    estado_analisis: normalizado.suficiente ? 'ok' : 'insuficiente',
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Límite de solicitudes por chat                                      */
+/* ------------------------------------------------------------------ */
+
+const VENTANA_MS = 10 * 60 * 1000;
+const usos = new Map(); // chatId -> [marcas de tiempo]
+
+function permitirAnalisis(chatId) {
+  const clave = String(chatId);
+  const ahora = Date.now();
+  const previos = (usos.get(clave) || []).filter((t) => ahora - t < VENTANA_MS);
+  const maximo = Number(config.visionMaxPorChat) || 5;
+  if (previos.length >= maximo) {
+    usos.set(clave, previos);
+    return false;
+  }
+  previos.push(ahora);
+  usos.set(clave, previos);
+  return true;
+}
+
+function reiniciarLimites() {
+  usos.clear();
+}
+
+/* ------------------------------------------------------------------ */
+/* Entrada principal                                                   */
+/* ------------------------------------------------------------------ */
+
+/* -------------------------- límite de concurrencia ------------------------- */
+
+const MAX_SIMULTANEOS = 1;
+const MAX_EN_COLA = 3;
+let activos = 0;
+const enEspera = [];
+
+/** Serializa los análisis (1 a la vez) para no disparar reintentos en paralelo. */
+async function conLimite(tarea) {
+  if (activos >= MAX_SIMULTANEOS) {
+    if (enEspera.length >= MAX_EN_COLA) {
+      throw new VisionError('Demasiadas fotografías en cola', 'limite');
+    }
+    await new Promise((resolver) => enEspera.push(resolver));
+  }
+  activos += 1;
+  try {
+    return await tarea();
+  } finally {
+    activos -= 1;
+    const siguiente = enEspera.shift();
+    if (siguiente) siguiente();
+  }
+}
+
+/**
+ * Descarga y analiza la fotografía. El archivo temporal se elimina siempre.
+ * @returns {object} resultado normalizado (sin binario ni URLs).
+ */
+async function analizarFoto(msg, { caption = null, chatId } = {}) {
+  const foto = elegirFoto(msg?.photo);
+  if (!foto) throw new VisionError('La fotografía no está disponible', 'sin_foto');
+
+  const chat = chatId ?? msg?.chat?.id;
+  if (chat !== undefined && chat !== null && !permitirAnalisis(chat)) {
+    throw new VisionError('Demasiadas fotografías en poco tiempo', 'limite');
+  }
+
+  return conLimite(async () => {
+    const descarga = await descargarFotoTemporal(foto);
+    try {
+      return await pedirAnalisis({
+        ruta: descarga.ruta,
+        mime: descarga.mime,
+        caption: typeof caption === 'string' && caption.trim() ? caption.trim().slice(0, 1000) : null,
+      });
+    } finally {
+      await borrarTemporal(descarga.ruta);
+    }
+  });
+}
+
+module.exports = {
+  analizarFoto,
+  elegirFoto,
+  mimePermitido,
+  descargarFotoTemporal,
+  borrarTemporal,
+  normalizarResultado,
+  permitirAnalisis,
+  reiniciarLimites,
+  VisionError,
+  MIMES,
+  _setDependencias,
+};

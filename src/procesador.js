@@ -22,6 +22,13 @@ const aprobaciones = require('./aprobaciones');
 const plazos = require('./plazos');
 const store = require('./store');
 const { dormir } = require('./gemini');
+const vision = require('./vision');
+
+// Updates de Telegram ya atendidos en este proceso (además del offset).
+const UPDATES_VISTOS = new Set();
+
+// Reportes ya registrados en esta sesión (protección extra ante fallos de guardado).
+const REGISTRADOS_SESION = new Set();
 
 let activo = false;
 let ocupado = false;
@@ -386,8 +393,14 @@ async function procesarReporte(reporte, { reintento = false, registrar = true } 
 
   const adjuntos = await descargarAdjuntos(reporte);
 
+  // El texto del reporte puede venir en `texto` o, en fotos, en `caption`.
+  const textoReporte =
+    (reporte.texto && String(reporte.texto).trim()) ||
+    (reporte.caption && String(reporte.caption).trim()) ||
+    '';
+
   const interpretacion = await agente.interpretar({
-    texto: reporte.texto,
+    texto: textoReporte,
     tipoMensaje: reporte.tipo,
     contexto,
     adjuntos,
@@ -408,10 +421,9 @@ async function procesarReporte(reporte, { reintento = false, registrar = true } 
   }
 
   // Se captura ANTES de reemplazar la consulta en el store: si es un reintento
-  // (botón «Reprocesar con IA»), aquí está la versión anterior, con su estado
-  // real de "registrado". Si se consultara después de agregarConsulta(), ya
-  // estaría pisada por la nueva y siempre parecería "no registrado".
-  const previa = reintento ? store.obtenerConsulta(reporte.id) : null;
+  // o una segunda pasada del mismo reporte, aquí está la versión anterior con
+  // su estado real de "registrado".
+  const previa = store.obtenerConsulta(reporte.id);
   const yaRegistrado = Boolean(previa && previa.registrado);
 
   // Reglas del nivel 2 (sin IA)
@@ -448,7 +460,7 @@ async function procesarReporte(reporte, { reintento = false, registrar = true } 
     lon: parcela ? parcela.lon : reporte.lon ?? null,
 
     tipo_mensaje: reporte.tipo,
-    texto: reporte.texto || '',
+    texto: textoReporte,
     transcripcion: interpretacion.transcripcion,
     descripcion_adjunto: interpretacion.descripcion_adjunto,
     audio_url: reporte.audio_url || null,
@@ -518,7 +530,13 @@ async function procesarReporte(reporte, { reintento = false, registrar = true } 
   }
 
   // 1) Registrar en la API
-  if (config.registrarCasos && registrar && !yaRegistrado && !esRespuesta) {
+  if (
+    config.registrarCasos &&
+    registrar &&
+    !yaRegistrado &&
+    !esRespuesta &&
+    !REGISTRADOS_SESION.has(reporte.id)
+  ) {
     const caso = derivados.construirCaso({
       reporteId: reporte.id,
       esPlaga: interpretacion.es_plaga,
@@ -529,6 +547,9 @@ async function procesarReporte(reporte, { reintento = false, registrar = true } 
     try {
       await api.validarCaso(caso);
       const resultado = await api.registrarCaso(caso);
+      // Se anota en memoria antes de guardar: si el guardado falla, un
+      // reintento dentro de esta sesión no volvería a registrar el caso.
+      REGISTRADOS_SESION.add(reporte.id);
       store.actualizarConsulta(reporte.id, { registrado: true, resultado, caso });
       store.incrementarMetrica('registrados');
       console.log(
@@ -678,7 +699,13 @@ async function revisarReportes({ forzar = false } = {}) {
     const reportes = await api.reportes(desde, 500);
     cache.ultimaRevision = Date.now();
 
-    const nuevos = (reportes || []).filter((r) => r && r.id && !store.yaProcesado(r.id));
+    const nuevos = (reportes || [])
+      .filter((r) => r && r.id && !store.yaProcesado(r.id))
+      .sort((a, b) => {
+        const ta = new Date(a.recibido).getTime();
+        const tb = new Date(b.recibido).getTime();
+        return (Number.isFinite(ta) ? ta : 0) - (Number.isFinite(tb) ? tb : 0);
+      });
     resumen.nuevos = nuevos.length;
     if (nuevos.length) console.log(`[reportes] ${nuevos.length} mensaje(s) nuevo(s) desde ${desde}`);
 
@@ -791,7 +818,184 @@ function guardarMensajeTelegram(msg, direccion, extra = {}) {
   return { chatId, texto, clase };
 }
 
-async function responderEnTelegram(chatId, textoUsuario, msg) {
+/**
+ * Identificador de la consulta creada a partir de un mensaje de Telegram.
+ * Incluye el chat para que dos chats distintos con el mismo `message_id` no
+ * se pisen. Los registros antiguos (`TG-<message_id>`) se siguen leyendo.
+ */
+function idConsultaTelegram(chatId, messageId) {
+  return `TG-${chatId}-${messageId}`;
+}
+
+/** Busca la consulta de un mensaje: primero el formato nuevo, luego el viejo. */
+function buscarConsultaTelegram(chatId, messageId, msg) {
+  const nueva = store.obtenerConsulta(idConsultaTelegram(chatId, messageId));
+  if (nueva) return nueva;
+
+  const vieja = store.obtenerConsulta(`TG-${messageId}`);
+  if (!vieja) return null;
+
+  // Un registro antiguo solo se reutiliza si se puede comprobar que es del
+  // mismo chat. Si no, se deja intacto (solo lectura) y el mensaje nuevo
+  // recibirá su propio identificador.
+  const autor = String(vieja.chat_id ?? vieja.productor_id ?? '');
+  const remitente = String(msg?.from?.id ?? '');
+  const mismoChat = autor !== '' && (autor === String(chatId) || (remitente !== '' && autor === remitente));
+  return mismoChat ? vieja : null;
+}
+
+const TEXTO_PEDIR_DESCRIPCION =
+  'Recibí tu foto. Para poder ayudarte necesito una descripción escrita: ' +
+  '¿de qué cultivo se trata, qué síntomas ves y desde cuándo?';
+
+/** Foto sin pie de foto: se pide una descripción una sola vez. */
+async function pedirDescripcionEnTelegram(chatId, msg) {
+  try {
+    const enviado = await telegram.enviarMensaje(chatId, TEXTO_PEDIR_DESCRIPCION);
+    guardarMensajeTelegram(
+      { ...enviado, chat: enviado.chat || msg.chat, from: store.getTelegram().bot },
+      'out',
+      { auto: true },
+    );
+    console.log(`→ [${telegram.tituloChat(msg.chat)}] (se pidió descripción de la foto)`);
+  } catch (err) {
+    console.error(`[telegram] no se pudo pedir la descripción: ${err.message}`);
+  }
+}
+
+/** Respuesta al productor a partir del análisis visual (siempre preliminar). */
+function respuestaDeAnalisis(analisis) {
+  if (!analisis.suficiente) {
+    return (
+      'Gracias por la fotografía. No puedo dar una orientación clara con esta imagen. ' +
+      '¿Me dices de qué cultivo se trata, en qué parte de la planta ves el daño y qué ' +
+      'porcentaje de la parcela está afectado? Si puedes, mándame otra foto más cercana.'
+    );
+  }
+  const partes = [];
+  if (analisis.plaga_posible) {
+    partes.push(
+      `Posible ${analisis.plaga_posible}: compatible con lo observado, pero requiere confirmación de un técnico.`,
+    );
+  } else {
+    partes.push('Con la foto no puedo identificar una plaga; requiere confirmación de un técnico.');
+  }
+  if (analisis.cultivo_posible) partes.push(`Cultivo probable: ${analisis.cultivo_posible}.`);
+  if (analisis.senales.length) partes.push(`Señales observadas: ${analisis.senales.join(', ')}.`);
+  if (analisis.porcentaje_estimado !== null) {
+    partes.push(`Daño estimado: ~${analisis.porcentaje_estimado} % (aproximado).`);
+  }
+  partes.push('Es una orientación preliminar y no sustituye la revisión de un técnico.');
+  return partes.join(' ');
+}
+
+const RESPUESTA_FOTO_SIN_ANALISIS =
+  'No fue posible analizar la fotografía. ¿Me describes por escrito qué cultivo es, ' +
+  'qué síntomas ves y desde cuándo? Con eso puedo orientarte.';
+
+/**
+ * Guarda la consulta de una fotografía (una sola) y devuelve el texto a enviar.
+ * Solo se guardan el análisis estructurado y metadatos: nunca binarios ni URLs.
+ */
+function registrarConsultaFoto(chatId, msg, caption, analisis) {
+  const previa = buscarConsultaTelegram(chatId, msg.message_id, msg);
+  const consulta = {
+    id: previa ? previa.id : idConsultaTelegram(chatId, msg.message_id),
+    chat_id: String(chatId),
+    fuente: 'telegram',
+    estado: analisis.estado_analisis === 'error' ? 'error' : 'analizado',
+    productor_id: String(msg.from?.id ?? chatId),
+    productor: telegram.nombreRemitente(msg),
+    parcela_id: null,
+    parcela: null,
+    cultivo: analisis.cultivo_posible || null,
+    localidad: null,
+    tipo_mensaje: 'foto',
+    texto: caption || null,
+    caption: caption || null,
+    recibido: new Date((msg.date || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+    analizado_en: Date.now(),
+    titulo: 'Fotografía de Telegram',
+    // Nunca se declara plaga confirmada a partir de una imagen.
+    es_plaga: null,
+    plaga: null,
+    plaga_nombre: null,
+    severidad: null,
+    cuarentenaria: null,
+    porcentaje: analisis.porcentaje_estimado ?? null,
+    prioridad: null,
+    semaforo: null,
+    tecnico_id: null,
+    tecnico_nombre: null,
+    brote: null,
+    confianza: analisis.confianza ?? 0,
+    modelo: analisis.modelo || null,
+    proveedor_analisis: analisis.proveedor || null,
+    posible_cultivo: analisis.cultivo_posible || null,
+    posible_plaga: analisis.plaga_posible || null,
+    estado_analisis: analisis.estado_analisis || 'ok',
+    analisis: {
+      material_vegetal: Boolean(analisis.material_vegetal),
+      suficiente: Boolean(analisis.suficiente),
+      cultivo_posible: analisis.cultivo_posible || null,
+      plaga_posible: analisis.plaga_posible || null,
+      senales: Array.isArray(analisis.senales) ? analisis.senales : [],
+      porcentaje_estimado: analisis.porcentaje_estimado ?? null,
+      confianza: analisis.confianza ?? 0,
+      necesita_mas: Array.isArray(analisis.necesita_mas) ? analisis.necesita_mas : [],
+      // Solo tokens y costo numérico (si el proveedor los informa).
+      proveedor: analisis.proveedor || null,
+      uso: analisis.uso || null,
+      advertencia:
+        analisis.advertencia || 'Resultado preliminar: no sustituye la revisión de un técnico.',
+    },
+    registrado: false,
+    error: null,
+  };
+  store.agregarConsulta(consulta);
+  store.incrementarMetrica('procesados');
+  return respuestaDeAnalisis(analisis);
+}
+
+/** Analiza la foto y devuelve el texto de UNA sola respuesta. */
+async function responderFotoConAnalisis(chatId, msg, caption) {
+  let analisis;
+  try {
+    analisis = await vision.analizarFoto(msg, { caption: caption || null, chatId });
+  } catch (err) {
+    // Mensaje controlado: el error de vision nunca incluye token, URL ni imagen.
+    console.error(`[vision] ${err?.codigo || 'error'}: ${err?.message || 'fallo'}`);
+    registrarConsultaFoto(chatId, msg, caption, {
+      material_vegetal: false,
+      suficiente: false,
+      cultivo_posible: null,
+      plaga_posible: null,
+      senales: [],
+      porcentaje_estimado: null,
+      confianza: 0,
+      necesita_mas: ['descripción escrita del problema'],
+      advertencia: RESPUESTA_FOTO_SIN_ANALISIS,
+      estado_analisis: 'error',
+      modelo: null,
+    });
+    return RESPUESTA_FOTO_SIN_ANALISIS;
+  }
+  return registrarConsultaFoto(chatId, msg, caption, analisis);
+}
+
+/** Envía una respuesta por Telegram y la registra como mensaje saliente. */
+async function responderYRecordar(chatId, msg, texto) {
+  const enviado = await telegram.enviarMensaje(chatId, texto);
+  guardarMensajeTelegram(
+    { ...enviado, chat: enviado.chat || msg.chat, from: store.getTelegram().bot },
+    'out',
+    { auto: true },
+  );
+  console.log(`→ [${telegram.tituloChat(msg.chat)}] (automático) ${texto}`);
+  return enviado;
+}
+
+async function responderEnTelegram(chatId, textoUsuario, msg, { esFoto = false } = {}) {
   const contexto = {
     productor: telegram.nombreRemitente(msg),
     fecha: new Date((msg.date || 0) * 1000).toISOString(),
@@ -799,15 +1003,17 @@ async function responderEnTelegram(chatId, textoUsuario, msg) {
 
   const interpretacion = await agente.interpretar({
     texto: textoUsuario,
-    tipoMensaje: 'texto',
+    tipoMensaje: esFoto ? 'foto' : 'texto',
     contexto,
     adjuntos: [],
   });
 
   const plaga = interpretacion.es_plaga ? agente.porId(interpretacion.plaga) : null;
+  const previa = buscarConsultaTelegram(chatId, msg.message_id, msg);
 
   const consulta = {
-    id: `TG-${msg.message_id}`,
+    id: previa ? previa.id : idConsultaTelegram(chatId, msg.message_id),
+    chat_id: String(chatId),
     fuente: 'telegram',
     estado: 'analizado',
     productor_id: String(msg.from?.id ?? chatId),
@@ -816,7 +1022,7 @@ async function responderEnTelegram(chatId, textoUsuario, msg) {
     parcela: null,
     cultivo: null,
     localidad: null,
-    tipo_mensaje: 'texto',
+    tipo_mensaje: esFoto ? 'foto' : 'texto',
     texto: textoUsuario,
     recibido: new Date((msg.date || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
     analizado_en: Date.now(),
@@ -958,24 +1164,51 @@ async function manejarUpdate(update) {
     update.message || update.edited_message || update.channel_post || update.edited_channel_post;
   if (!msg || !msg.chat) return;
 
+  // Red de seguridad además del offset: el mismo update nunca se procesa dos veces.
+  const chatIdMsg = String(msg.chat.id);
+  const claveUpdate =
+    update.update_id !== undefined && update.update_id !== null
+      ? `u:${update.update_id}`
+      : `m:${chatIdMsg}:${msg.message_id}`;
+  if (UPDATES_VISTOS.has(claveUpdate)) return;
+  UPDATES_VISTOS.add(claveUpdate);
+  if (UPDATES_VISTOS.size > 1000) {
+    UPDATES_VISTOS.delete(UPDATES_VISTOS.values().next().value);
+  }
+
   const esEdicion = Boolean(update.edited_message || update.edited_channel_post);
   const { chatId, texto, clase } = guardarMensajeTelegram(msg, 'in', { esEdicion });
   console.log(`← [${telegram.tituloChat(msg.chat)}] ${telegram.nombreRemitente(msg)}: ${texto}`);
 
   if (esEdicion || !config.responderTelegram) return;
   if (msg.chat.type !== 'private') return;
-  if (clase !== 'texto' || !texto.trim()) return;
   if (String(msg.from?.id) === String(store.getTelegram().bot?.id)) return;
 
+  // Ya atendido (mismo chat y mensaje): no se vuelve a analizar ni a responder.
+  if (buscarConsultaTelegram(chatId, msg.message_id, msg)) return;
+
+  // Texto clasificable: el texto normal o, en una foto, su pie de foto.
+  const esFoto = clase === 'photo' || Array.isArray(msg.photo);
+  const textoNormal = typeof msg.text === 'string' ? msg.text.trim() : '';
+  const caption = esFoto && typeof msg.caption === 'string' ? msg.caption.trim() : '';
+  const textoClasificable = textoNormal || caption;
+
   try {
-    const respuesta = await responderEnTelegram(chatId, texto, msg);
-    const enviado = await telegram.enviarMensaje(chatId, respuesta);
-    guardarMensajeTelegram(
-      { ...enviado, chat: enviado.chat || msg.chat, from: store.getTelegram().bot },
-      'out',
-      { auto: true },
-    );
-    console.log(`→ [${telegram.tituloChat(msg.chat)}] (automático) ${respuesta}`);
+    // Fotografía con análisis visual habilitado: se analiza (con caption si lo hay).
+    if (esFoto && config.visionHabilitado) {
+      const respuesta = await responderFotoConAnalisis(chatId, msg, caption);
+      await responderYRecordar(chatId, msg, respuesta);
+      return;
+    }
+
+    if (!textoClasificable) {
+      // Sin análisis visual: la foto sin texto pide descripción; otro media, nada.
+      if (esFoto) await pedirDescripcionEnTelegram(chatId, msg);
+      return;
+    }
+
+    const respuesta = await responderEnTelegram(chatId, textoClasificable, msg, { esFoto });
+    await responderYRecordar(chatId, msg, respuesta);
   } catch (err) {
     console.error(`[telegram] no se pudo responder a ${chatId}: ${err.message}`);
   }
@@ -1105,7 +1338,9 @@ module.exports = {
   revisarReportes,
   revisarPlazos,
   procesarReporte,
+  manejarUpdate,
   responderEnTelegram,
+  idConsultaTelegram,
   estadoSistema,
   guardarMensajeTelegram,
   cargarCatalogos,

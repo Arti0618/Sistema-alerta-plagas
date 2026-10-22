@@ -219,7 +219,8 @@ function renderConsultas() {
     fila.append(el('div', 'fila__via', (c.fuente === 'telegram' ? 'TG' : c.tipo_mensaje || '—')));
 
     const plaga = el('div', 'fila__plaga');
-    plaga.textContent = c.es_plaga ? c.plaga_nombre || c.plaga || 'desconocida' : 'no es plaga';
+    plaga.textContent =
+      c.plaga_etiqueta || (c.es_plaga ? c.plaga_nombre || c.plaga || 'Plaga detectada' : 'Sin determinar');
     fila.append(plaga);
 
     const urg = el('div');
@@ -299,9 +300,10 @@ function renderDetalle() {
   const cabecera = el('div');
   cabecera.style.marginBottom = '14px';
   cabecera.append(el('span', `etiqueta ${e.clase}`, e.texto));
-  if (c.es_plaga) {
+  const etiquetaP = c.plaga_etiqueta || (c.es_plaga === true ? c.plaga_nombre || 'Plaga detectada' : null);
+  if (etiquetaP) {
     cabecera.append(document.createTextNode(' '));
-    cabecera.append(el('span', 'etiqueta e-neutra', c.plaga_nombre || 'desconocida'));
+    cabecera.append(el('span', 'etiqueta e-neutra', etiquetaP));
   }
   cuerpo.append(cabecera);
 
@@ -312,13 +314,18 @@ function renderDetalle() {
   cuerpo.append(dato('Tipo de mensaje', c.tipo_mensaje || '—'));
 
   if (c.texto) cuerpo.append(dato('Texto del productor', c.texto));
+  if (c.caption) cuerpo.append(dato('Pie de foto', c.caption));
   if (c.transcripcion) cuerpo.append(dato('Transcripción del audio', c.transcripcion));
   if (c.descripcion_adjunto) cuerpo.append(dato('Lo que se ve en la foto', c.descripcion_adjunto));
   if (c.audio_url) cuerpo.append(dato('Audio', c.audio_url));
   if (c.foto_url) cuerpo.append(dato('Foto', c.foto_url));
 
-  cuerpo.append(dato('¿Es reporte de plaga?', c.es_plaga ? 'Sí' : 'No'));
-  cuerpo.append(dato('Plaga', c.plaga ? `${c.plaga_nombre || c.plaga} (${c.plaga})` : '—'));
+  cuerpo.append(dato('¿Es reporte de plaga?', c.es_plaga_texto || (c.es_plaga === true ? 'Sí' : c.es_plaga === false ? 'No' : 'Sin determinar (preliminar)')));
+  cuerpo.append(dato('Plaga', c.plaga_etiqueta || (c.plaga ? `${c.plaga_nombre || c.plaga} (${c.plaga})` : '—')));
+  if (c.posible_plaga) cuerpo.append(dato('Posible plaga (visual)', c.posible_plaga));
+  if (c.posible_cultivo) cuerpo.append(dato('Posible cultivo (visual)', c.posible_cultivo));
+  if (c.estado_analisis) cuerpo.append(dato('Estado del análisis', c.estado_analisis));
+  if (c.proveedor_analisis) cuerpo.append(dato('Proveedor del análisis', c.proveedor_analisis));
   cuerpo.append(dato('Severidad', c.severidad || '—'));
   cuerpo.append(dato('Cuarentenaria', c.cuarentenaria ? 'Sí' : 'No'));
   if (c.es_seguimiento) cuerpo.append(dato('Tipo', 'Seguimiento (no abre caso nuevo)'));

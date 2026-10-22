@@ -17,6 +17,10 @@ const api = require('./alerta-api');
 const tecnicos = require('./tecnicos');
 
 const RADIO_KM = 5;
+// Margen para el borde: un caso a exactamente 5 km NO cuenta, pero el cálculo
+// en coma flotante puede dar 4.9999999999999. Con 1 nanómetro de margen la
+// comparación respeta la regla («menos de 5 km») sin afectar a 4.999 km.
+const MARGEN_KM = 1e-9;
 const VENTANA_HORAS = 168;
 const VIGENCIA_PREVIOS_MS = 30 * 60 * 1000;
 
@@ -48,19 +52,35 @@ async function contar({ idActual, plagaId, lat, lon, recibido, propios = [], pre
   const ahora = new Date(recibido).getTime();
   const desde = ahora - VENTANA_HORAS * 3600 * 1000;
 
+  // Un reporte puede llegar por las dos vías: aparece en GET /casos-previos y
+  // además lo tenemos guardado como caso propio. Se cuentan por su id una sola
+  // vez. La plaga se compara por su identificador canónico (normalizado).
+  const canonic = (valor) =>
+    String(valor ?? '')
+      .trim()
+      .toLowerCase();
+  const plagaBuscada = canonic(plagaId);
+  const vistos = new Set();
+  if (idActual) vistos.add(canonic(idActual));
+
   const vecinos = [];
   let cuenta = 1; // el caso actual
 
   const revisar = (id, plaga, cuando, cLat, cLon) => {
+    const clave = canonic(id);
+    if (!clave) return;
     // Nunca contarse a sí mismo (importante al recalcular casos ya guardados).
-    if (idActual && id === idActual) return;
-    if (!plaga || plaga !== plagaId) return;
+    if (clave === canonic(idActual)) return;
+    // Evitar contar dos veces el mismo reporte (previos + propios).
+    if (vistos.has(clave)) return;
+    vistos.add(clave);
+    if (!plaga || canonic(plaga) !== plagaBuscada) return;
     if (cLat == null || cLon == null) return;
     const t = new Date(cuando).getTime();
     if (!Number.isFinite(t)) return;
     if (t > ahora || t < desde) return;
     const d = tecnicos.distanciaKm(lat, lon, cLat, cLon);
-    if (d < RADIO_KM) {
+    if (d < RADIO_KM - MARGEN_KM) {
       cuenta += 1;
       vecinos.push({ id, distancia_km: Math.round(d * 100) / 100, recibido: cuando });
     }

@@ -131,4 +131,17 @@ module.exports = {
         'callback_query',
       ],
     }),
+
+  /** Metadatos de un archivo (incluye file_path). No registra ni expone la URL. */
+  getFile: (fileId) => llamar('getFile', { file_id: fileId }),
+
+  /**
+   * URL de descarga de un archivo ya resuelto con getFile.
+   *
+   * Telegram exige el orden `/file/bot<TOKEN>/<file_path>` (distinto de los
+   * endpoints normales, que son `/bot<TOKEN>/<metodo>`). Por eso no se usa
+   * base() aquí. Contiene el token: NUNCA debe registrarse ni guardarse.
+   */
+  urlArchivo: (filePath) =>
+    `https://api.telegram.org/file/bot${config.telegramToken}/${String(filePath).replace(/^\/+/, '')}`,
 };
