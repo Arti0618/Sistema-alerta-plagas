@@ -346,6 +346,37 @@ test('el saneamiento sobrevive a acentos, texto intermedio y varias afirmaciones
   assert.ok(!/registrad|folio|se generó|asignado|visitar|visita|notific/i.test(varias), varias);
 });
 
+test('se eliminan las promesas de visita y de contacto humano', () => {
+  // Texto real observado en la prueba controlada de producción.
+  const real = vinculacion.sanearRespuesta(
+    'Los síntomas que describe en su maíz son consistentes con la presencia de gusano cogollero. ' +
+      'Es necesario realizar un muestreo en su parcela para determinar el nivel de daño y evaluar las medidas de control adecuadas. ' +
+      'Un técnico de la Junta Local se pondrá en contacto con usted para programar una visita de inspección.',
+  );
+  assert.ok(!/visita/i.test(real), real);
+  assert.ok(!/pondrá en contacto/i.test(real), real);
+  assert.ok(!/inspección/i.test(real), real);
+  assert.ok(/gusano cogollero/i.test(real), real);
+  assert.ok(/maíz/i.test(real), real);
+  assert.ok(/muestreo/i.test(real), real);
+  assert.ok(/medidas de control/i.test(real), real);
+
+  const promesas = [
+    'Se programará una visita de inspección a su parcela.',
+    'Se efectuará una visita.',
+    'Nos comunicaremos con usted para agendar la revisión.',
+    'El técnico se pondrá en contacto con usted.',
+    'Le escribiremos para confirmar el seguimiento.',
+  ];
+  for (const frase of promesas) {
+    const limpio = vinculacion.sanearRespuesta(frase);
+    assert.ok(
+      !/visita|pondrá en contacto|comunicaremos|escribiremos/i.test(limpio),
+      `"${frase}" -> "${limpio}"`,
+    );
+  }
+});
+
 test('el panel recibe el estado real de las consultas locales', () => {
   const fs = require('node:fs');
   const server = fs.readFileSync(path.join(RAIZ, 'server.js'), 'utf8');

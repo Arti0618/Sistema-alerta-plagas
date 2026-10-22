@@ -927,6 +927,16 @@ const FRASES_ADMINISTRATIVAS = [
   /\bcaso\s+(?:creado|generado|abierto|registrado|formalizado)(?!\w)/gi,
   // --- Visita programada ---
   /\b[^.!?]*\bvisita\b[^.!?]*\b(?:programad[oa]|agendad[oa]|confirmad[oa]|coordinad[oa])(?!\w)[^.!?]*/gi,
+  // La promesa de visita se elimina con toda su oración: dejar un resto
+  // ("Un técnico ... con usted para ...") no aporta nada y confunde.
+  /\b[^.!?]*\b(?:programar|agendar|coordinar|gestionar|realizar|efectuar)[aá]?\s+(?:una\s+|la\s+|el\s+)?visita[^.!?]*/gi,
+  // --- Promesas de contacto humano (con o sin mencionar al técnico) ---
+  /\b[^.!?]*\bse\s+pondr[aá]\s+en\s+contacto[^.!?]*/gi,
+  /\b[^.!?]*\bpondr[aá]\s+en\s+contacto[^.!?]*/gi,
+  /\b[^.!?]*\bse\s+comunicar[aá][^.!?]*/gi,
+  /\b[^.!?]*\b(?:contactaremos|visitaremos|responderemos)(?!\w)[^.!?]*/gi,
+  /\b[^.!?]*\bnos\s+(?:comunicaremos|escribiremos|avisaremos)(?!\w)[^.!?]*/gi,
+  /\b[^.!?]*\ble\s+(?:escribiremos|avisaremos|comunicaremos|responderemos)(?!\w)[^.!?]*/gi,
   // --- Aprobación (aprobado / aprobación / aprobada) ---
   /\b[^.!?]*\baprob(?:ad[oa]s?|o|ó|aci[oó]n)(?!\w)[^.!?]*/gi,
   // --- Notificación al coordinador ---
@@ -952,6 +962,14 @@ const MARCADORES_ADMINISTRATIVOS = [
   /\bvisita\b[^.!?]*\b(?:programad[oa]|agendad[oa]|confirmad[oa])(?!\w)/i,
   // Promesas de visita, aunque no se mencione al técnico en la misma frase.
   /\bvisit(?:ar[aá]n|ará|arán|ara)(?!\w)/i,
+  /\b(?:programar|agendar|coordinar|gestionar|realizar|efectuar)[aá]?\s+(?:una\s+|la\s+|el\s+)?visita(?!\w)/i,
+  /\bvisita\s+de\s+(?:inspecci[oó]n|revisi[oó]n)(?!\w)/i,
+  // Promesas de contacto humano, aunque no se mencione al técnico.
+  /\b(?:se\s+)?pondr[aá]n?\s+en\s+contacto(?!\w)/i,
+  /\bse\s+comunicar[aá](?!\w)/i,
+  /\b(?:contactaremos|visitaremos|responderemos)(?!\w)/i,
+  /\bnos\s+(?:comunicaremos|escribiremos|avisaremos)(?!\w)/i,
+  /\ble\s+(?:escribiremos|avisaremos|comunicaremos|responderemos)(?!\w)/i,
   /\bacudir[aá]n?(?!\w)/i,
   /\baprob(?:ad[oa]s?|o|ó|aci[oó]n)(?!\w)/i,
   /\b(?:se\s+)?(?:cre[oó]|gener[oó]|abrimos|abri[oó])\s+el\s+caso(?!\w)/i,
