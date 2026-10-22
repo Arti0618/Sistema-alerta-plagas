@@ -396,22 +396,7 @@ th { color: var(--apagado); font-weight: 600; font-size: 12.5px; text-transform:
 
 .vinculo-telegram { border-top: 1px solid var(--linea); margin-top: 18px; padding: 16px; display: grid; gap: 10px; }
 
-/* Revisiones de coordinación (casos oficiales + casos externos de Telegram) */
-.revisiones { margin-top: 14px; display: grid; gap: 12px; }
-.revision { border: 1px solid var(--linea); border-radius: 12px; padding: 12px; display: grid; gap: 10px; background: rgba(255, 255, 255, .02); }
-.revision[data-origen="telegram_externo"] { border-left: 3px solid #b8ebd2; }
-.revision__cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.revision__titulo { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.revision__origen { font-size: 12.5px; color: var(--apagado); }
-.revision__cuerpo { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 14px; }
-.revision__dato { display: grid; gap: 2px; }
-.revision__k { font-size: 11.5px; color: var(--apagado); text-transform: uppercase; letter-spacing: .04em; }
-.revision__v { font-size: 13.5px; }
-.revision__acciones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.revision__acciones .btn { padding: 7px 11px; font-size: 13px; }
-.revision__nota { font-size: 12.5px; color: var(--apagado); }
-.revision__seccion { display: grid; gap: 10px; }
-.revision__seccion-titulo { margin: 0; font-size: 15px; }
+
 .vinculo-telegram__cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .vinculo-telegram h2 { margin: 0; font-size: 16px; }
 .vinculo-telegram__acciones { display: flex; gap: 8px; flex-wrap: wrap; }

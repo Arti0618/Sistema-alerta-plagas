@@ -15,7 +15,8 @@ const path = require('node:path');
 const RAIZ = path.join(__dirname, '..');
 const app = fs.readFileSync(path.join(RAIZ, 'public', 'app.js'), 'utf8');
 const html = fs.readFileSync(path.join(RAIZ, 'public', 'index.html'), 'utf8');
-const css = fs.readFileSync(path.join(RAIZ, 'public', 'portal.css'), 'utf8');
+// El panel de coordinación usa styles.css (no portal.css, que es de Mi Campo).
+const css = fs.readFileSync(path.join(RAIZ, 'public', 'styles.css'), 'utf8');
 
 /** Extrae y evalúa una función pura del panel. */
 function extraer(nombre) {
@@ -41,7 +42,10 @@ test('el panel tiene la pestaña Revisiones con sus cuatro secciones', () => {
   for (const seccion of ['pendientes', 'aprobadas', 'rechazadas', 'errores']) {
     assert.ok(html.includes(`data-revision="${seccion}"`), `falta la sección ${seccion}`);
   }
+  // Los estilos van en la hoja que usa el panel (styles.css).
   assert.match(css, /\.revision\b/);
+  assert.match(css, /\.revision__k/);
+  assert.match(css, /\.revision__v/);
 });
 
 test('las secciones agrupan oficiales y externos por estado de revisión', () => {
