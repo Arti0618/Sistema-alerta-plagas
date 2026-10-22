@@ -94,6 +94,13 @@ const config = {
   visionMaxPorChat: Number(si('VISION_MAX_POR_CHAT', 5)),
   // Espera máxima que se respeta ante un 429 temporal (nunca bloquea el bucle).
   visionRetryAfterMaxMs: Number(si('VISION_RETRY_AFTER_MAX_MS', 3000)),
+  // Proveedor del análisis visual: gemini (directo) u openrouter.
+  visionProvider: si('VISION_PROVIDER', 'gemini').toLowerCase(),
+  visionProviderFallback: si('VISION_PROVIDER_FALLBACK', '').toLowerCase(),
+  openrouterKey: (process.env.OPENROUTER_API_KEY || '').trim(),
+  openrouterModel: si('OPENROUTER_VISION_MODEL', 'google/gemini-3.1-flash-lite'),
+  openrouterAlternos: si('OPENROUTER_VISION_MODELOS_ALTERNOS', ''),
+  openrouterTimeoutMs: Number(si('OPENROUTER_TIMEOUT_MS', 30000)),
 
   // Rutas
   dataDir: path.join(ROOT, 'data'),
@@ -130,6 +137,15 @@ config.visionModel = si('VISION_MODEL', config.geminiModel);
 config.visionModelos = [
   ...new Set(
     [config.visionModel, ...si('VISION_MODELOS_ALTERNOS', '').split(',')]
+      .map((m) => m.trim())
+      .filter(Boolean),
+  ),
+];
+
+/** Cadena de modelos para OpenRouter (siempre multimodales). */
+config.openrouterModelos = [
+  ...new Set(
+    [config.openrouterModel, ...String(config.openrouterAlternos || '').split(',')]
       .map((m) => m.trim())
       .filter(Boolean),
   ),

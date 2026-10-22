@@ -913,6 +913,7 @@ function registrarConsultaFoto(chatId, msg, caption, analisis) {
     brote: null,
     confianza: analisis.confianza ?? 0,
     modelo: analisis.modelo || null,
+    proveedor_analisis: analisis.proveedor || null,
     posible_cultivo: analisis.cultivo_posible || null,
     posible_plaga: analisis.plaga_posible || null,
     estado_analisis: analisis.estado_analisis || 'ok',
@@ -925,6 +926,9 @@ function registrarConsultaFoto(chatId, msg, caption, analisis) {
       porcentaje_estimado: analisis.porcentaje_estimado ?? null,
       confianza: analisis.confianza ?? 0,
       necesita_mas: Array.isArray(analisis.necesita_mas) ? analisis.necesita_mas : [],
+      // Solo tokens y costo numérico (si el proveedor los informa).
+      proveedor: analisis.proveedor || null,
+      uso: analisis.uso || null,
       advertencia:
         analisis.advertencia || 'Resultado preliminar: no sustituye la revisión de un técnico.',
     },

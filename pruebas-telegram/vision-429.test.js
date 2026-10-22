@@ -19,6 +19,12 @@ const config = {
   visionMaxPorChat: 10,
   visionRetryAfterMaxMs: 3000,
   visionModel: 'modelo-a',
+  visionProvider: 'gemini',
+  visionProviderFallback: '',
+  openrouterKey: '',
+  openrouterModel: 'modelo-a',
+  openrouterModelos: ['modelo-a'],
+  openrouterTimeoutMs: 30000,
   visionModelos: ['modelo-a'],
   geminiKey: 'clave-ficticia',
 };
@@ -195,7 +201,7 @@ test('los logs de análisis no exponen secretos ni imagen', async () => {
   for (const linea of estado.logs) {
     assert.ok(!/clave|key|token|base64|inline_data|https:\/\//i.test(linea), linea);
   }
-  assert.ok(estado.logs.some((l) => /etapa=analisis modelo=modelo-a http=429 categoria=cuota duracion_ms=\d+/.test(l)));
+  assert.ok(estado.logs.some((l) => /etapa=analisis proveedor=gemini modelo=modelo-a http=429 categoria=cuota duracion_ms=\d+/.test(l)));
 });
 
 test('no se hace ninguna petición a /casos', async () => {

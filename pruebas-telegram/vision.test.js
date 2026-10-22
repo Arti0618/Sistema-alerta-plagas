@@ -19,6 +19,12 @@ const config = {
   visionTimeoutMs: 1000,
   visionMaxPorChat: 3,
   visionModel: 'modelo-prueba',
+  visionProvider: 'gemini',
+  visionProviderFallback: '',
+  openrouterKey: '',
+  openrouterModel: 'modelo-a',
+  openrouterModelos: ['modelo-a'],
+  openrouterTimeoutMs: 30000,
   visionModelos: ['modelo-prueba'],
   geminiKey: 'clave-ficticia',
 };

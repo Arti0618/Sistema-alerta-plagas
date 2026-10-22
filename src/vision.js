@@ -19,6 +19,7 @@ const crypto = require('node:crypto');
 const config = require('./config');
 const telegram = require('./telegram');
 const gemini = require('./gemini');
+const openrouter = require('./openrouter');
 
 const MIMES = {
   jpg: 'image/jpeg',
@@ -41,6 +42,7 @@ const deps = {
   getFile: (fileId) => telegram.getFile(fileId),
   urlArchivo: (ruta) => telegram.urlArchivo(ruta),
   generar: (opciones) => gemini.generar(opciones),
+  generarOpenRouter: (opciones) => openrouter.generar(opciones),
   parteInline: (buffer, mime) => gemini.parteInline(buffer, mime),
   dormir: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   fs,
@@ -352,82 +354,97 @@ async function pedirAnalisis({ ruta, mime, caption }) {
   }
 
   const partes = [{ text: promptAnalisis(caption) }, deps.parteInline(buffer, mime)];
-  const modelos = [
-    ...new Set(
-      (Array.isArray(config.visionModelos) && config.visionModelos.length
-        ? config.visionModelos
-        : [config.visionModel]
-      ).filter(Boolean),
-    ),
-  ];
+  const proveedores = cadenaProveedores();
+  if (!proveedores.length) {
+    throw new VisionError('No hay proveedor de análisis visual configurado', 'analisis');
+  }
 
   let ultimoError = null;
+  let ultimoProveedor = null;
 
-  for (let i = 0; i < modelos.length; i++) {
-    const modelo = modelos[i];
-    const inicio = Date.now();
-    try {
-      const respuesta = await deps.generar({
-        sistema: SISTEMA,
-        partes,
-        esquema: ESQUEMA,
-        temperatura: 0.1,
-        reintentos: 1,
-        modelos: [modelo],
-      });
-      registrarAnalisis({ modelo, http: 200, categoria: 'ok', duracion: Date.now() - inicio });
-      return interpretarRespuesta(respuesta, modelo);
-    } catch (err) {
-      // Un problema de formato de la respuesta no es un fallo del modelo:
-      // no se reintenta ni se cambia de modelo.
-      if (err instanceof VisionError) throw err;
-      const categoria = err?.codigo || 'analisis';
-      registrarAnalisis({
-        modelo,
-        http: err?.http ?? null,
-        categoria,
-        duracion: Date.now() - inicio,
-      });
-      ultimoError = err;
+  for (const p of proveedores) {
+    let categoriaProveedor = null;
 
-      // Un único reintento controlado: solo cuota TEMPORAL, sin alternativa
-      // disponible y con retry_after corto. Nunca para cuota diaria/crédito.
-      const temporal = err?.http === 429 && categoria === 'cuota';
-      const sinAlternativas = modelos.length === 1;
-      if (temporal && sinAlternativas) {
-        const espera = Math.min(
-          Number(config.visionRetryAfterMaxMs) || 3000,
-          Math.max(0, Number(err.retryAfterMs) || 800),
-        );
-        await deps.dormir(espera);
-        const reintento = Date.now();
-        try {
-          const respuesta = await deps.generar({
-            sistema: SISTEMA,
-            partes,
-            esquema: ESQUEMA,
-            temperatura: 0.1,
-            reintentos: 1,
-            modelos: [modelo],
-          });
-          registrarAnalisis({
-            modelo,
-            http: 200,
-            categoria: 'ok',
-            duracion: Date.now() - reintento,
-          });
-          return interpretarRespuesta(respuesta, modelo);
-        } catch (err2) {
-          registrarAnalisis({
-            modelo,
-            http: err2?.http ?? null,
-            categoria: err2?.codigo || 'analisis',
-            duracion: Date.now() - reintento,
-          });
-          ultimoError = err2;
+    for (let i = 0; i < p.modelos.length; i++) {
+      const modelo = p.modelos[i];
+      const inicioIntento = Date.now();
+      try {
+        const respuesta = await p.generar({
+          sistema: SISTEMA,
+          partes,
+          esquema: ESQUEMA,
+          temperatura: 0.1,
+          reintentos: 1,
+          modelos: [modelo],
+        });
+        registrarAnalisis({
+          proveedor: p.proveedor,
+          modelo,
+          http: 200,
+          categoria: 'ok',
+          duracion: Date.now() - inicioIntento,
+        });
+        return interpretarRespuesta(respuesta, modelo, p.proveedor);
+      } catch (err) {
+        // Un problema de formato de la respuesta no es un fallo del modelo:
+        // no se reintenta ni se cambia de modelo/proveedor.
+        if (err instanceof VisionError) throw err;
+        const categoria = err?.codigo || 'proveedor';
+        registrarAnalisis({
+          proveedor: p.proveedor,
+          modelo,
+          http: err?.http ?? null,
+          categoria,
+          duracion: Date.now() - inicioIntento,
+        });
+        ultimoError = err;
+        ultimoProveedor = p.proveedor;
+        categoriaProveedor = categoria;
+
+        // Un único reintento controlado: solo cuota TEMPORAL y sin alternativas.
+        const temporal = err?.http === 429 && categoria === 'cuota';
+        const sinAlternativas = proveedores.length === 1 && p.modelos.length === 1;
+        if (temporal && sinAlternativas) {
+          const espera = Math.min(
+            Number(config.visionRetryAfterMaxMs) || 3000,
+            Math.max(0, Number(err.retryAfterMs) || 800),
+          );
+          await deps.dormir(espera);
+          const reintento = Date.now();
+          try {
+            const respuesta = await p.generar({
+              sistema: SISTEMA,
+              partes,
+              esquema: ESQUEMA,
+              temperatura: 0.1,
+              reintentos: 1,
+              modelos: [modelo],
+            });
+            registrarAnalisis({
+              proveedor: p.proveedor,
+              modelo,
+              http: 200,
+              categoria: 'ok',
+              duracion: Date.now() - reintento,
+            });
+            return interpretarRespuesta(respuesta, modelo, p.proveedor);
+          } catch (err2) {
+            registrarAnalisis({
+              proveedor: p.proveedor,
+              modelo,
+              http: err2?.http ?? null,
+              categoria: err2?.codigo || 'proveedor',
+              duracion: Date.now() - reintento,
+            });
+            ultimoError = err2;
+            categoriaProveedor = err2?.codigo || 'proveedor';
+          }
         }
       }
     }
+
+    // Solo se cae al proveedor de respaldo ante fallos reintentables del servicio.
+    if (!CATEGORIAS_RESPALDO.has(categoriaProveedor)) break;
   }
 
   const mensaje = String(ultimoError?.message || '');
@@ -436,16 +453,45 @@ async function pedirAnalisis({ ruta, mime, caption }) {
   throw new VisionError('No se pudo analizar la imagen', codigo);
 }
 
+/** Proveedores a intentar, en orden (principal y respaldo opcional). */
+function cadenaProveedores() {
+  const nombres = [config.visionProvider, config.visionProviderFallback]
+    .map((n) => String(n || '').toLowerCase())
+    .filter(Boolean);
+  const salida = [];
+  for (const nombre of nombres) {
+    if (salida.some((p) => p.proveedor === nombre)) continue;
+    if (nombre === 'openrouter') {
+      if (!config.openrouterKey) continue;
+      salida.push({
+        proveedor: 'openrouter',
+        modelos: (config.openrouterModelos || [config.openrouterModel]).filter(Boolean),
+        generar: (opciones) => deps.generarOpenRouter(opciones),
+      });
+    } else if (nombre === 'gemini') {
+      salida.push({
+        proveedor: 'gemini',
+        modelos: (config.visionModelos || [config.visionModel]).filter(Boolean),
+        generar: (opciones) => deps.generar(opciones),
+      });
+    }
+  }
+  return salida;
+}
+
+/** Categorías que permiten pasar al proveedor de respaldo. */
+const CATEGORIAS_RESPALDO = new Set(['cuota', 'cuota_diaria', 'modelo', 'timeout', 'servidor']);
+
 /** Registro sanitizado del análisis: sin prompt, imagen, clave ni URL. */
-function registrarAnalisis({ modelo, http, categoria, duracion }) {
+function registrarAnalisis({ proveedor, modelo, http, categoria, duracion }) {
   console.log(
-    `[vision] etapa=analisis modelo=${modelo} http=${http === null ? '-' : http} ` +
-      `categoria=${categoria} duracion_ms=${duracion}`,
+    `[vision] etapa=analisis proveedor=${proveedor} modelo=${modelo} ` +
+      `http=${http === null ? '-' : http} categoria=${categoria} duracion_ms=${duracion}`,
   );
 }
 
 /** Valida y normaliza la respuesta del modelo. */
-function interpretarRespuesta(respuesta, modelo) {
+function interpretarRespuesta(respuesta, modelo, proveedor) {
   let crudo;
   try {
     crudo = JSON.parse(respuesta.texto);
@@ -456,6 +502,15 @@ function interpretarRespuesta(respuesta, modelo) {
   return {
     ...normalizado,
     modelo: respuesta.modelo || modelo || config.visionModel,
+    proveedor: respuesta.proveedor || proveedor || config.visionProvider,
+    // Solo tokens y costo numérico: nada de metadatos del proveedor.
+    uso: respuesta.uso
+      ? {
+          tokens_entrada: respuesta.uso.tokens_entrada ?? null,
+          tokens_salida: respuesta.uso.tokens_salida ?? null,
+          costo_usd: respuesta.uso.costo_usd ?? null,
+        }
+      : null,
     estado_analisis: normalizado.suficiente ? 'ok' : 'insuficiente',
   };
 }
