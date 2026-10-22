@@ -481,3 +481,145 @@ Universidad Autónoma Chapingo.
 
 Equipo **Los Artilleros** (equipo01):
 Arturo Hernández Hernández y Moises Israel Castro Reyes.
+
+---
+
+## 15. Cierre técnico (22 de octubre de 2026)
+
+Esta sección documenta el estado final del sistema Node.js, tal como quedó
+desplegado y versionado en la rama `correccion/telegram-caption`.
+
+### 15.1 Arquitectura Node.js
+
+- `server.js`: servidor HTTP, rutas del panel (`/api/panel`, `/api/mapa`,
+  `/api/mensajes`, etc.) y entrega de archivos estáticos.
+- `src/procesador.js`: orquestador. Procesa los reportes oficiales
+  (`GET /reportes`), atiende Telegram y calcula el Nivel 2.
+- `src/alerta-api.js`: cliente de la API del reto (GET y POST).
+- `src/agente.js`: interpretación de texto/audio/foto con Gemini.
+- `src/vision.js` + `src/openrouter.js` + `src/gemini.js`: análisis visual de
+  fotografías, con proveedor principal y respaldo.
+- `src/reglas.js`, `src/tecnicos.js`, `src/brotes.js`, `src/derivados.js`:
+  reglas del Nivel 2 (sin IA).
+- `src/store.js` + `src/supa.js`: persistencia (Supabase como fuente de verdad
+  y archivos JSON locales como respaldo).
+- `src/telegram.js`, `src/aprobaciones.js`, `src/plazos.js`: bot, aprobación
+  del coordinador y escalado por plazos.
+- `src/etiquetas-panel.js`: etiquetas del panel (incluye resultados visuales
+  preliminares).
+
+### 15.2 Flujo oficial (el que otorga puntos)
+
+1. `GET /reportes?desde=…` trae los mensajes nuevos.
+2. Se interpretan (texto, foto o nota de voz) y se calculan prioridad,
+   semáforo, técnico y brote.
+3. Se envía **un único** `POST /casos` por reporte.
+4. Si hay urgencia o brote, se avisa al coordinador; si falta la parcela, se
+   hace **una** `POST /preguntas` y se completa con la respuesta.
+
+### 15.3 Texto, fotografías y notas de voz
+
+- **Texto**: se interpreta directamente.
+- **Fotografía oficial** (`foto_url`): se descarga y se envía al modelo junto
+  con el pie de foto (`reporte.texto`, o `reporte.caption` como respaldo).
+- **Nota de voz** (`audio_url`): se descarga y se envía al modelo, que devuelve
+  la transcripción y la interpretación.
+
+### 15.4 OpenRouter y respaldo Gemini
+
+El análisis visual usa **OpenRouter** (`google/gemini-3.1-flash-lite`) como
+proveedor principal y **Gemini directo** como respaldo configurable. El
+resultado es siempre preliminar: nunca confirma una plaga y usa expresiones
+como «posible», «compatible con» o «requiere confirmación».
+
+Se controlan cuota (429), errores 5xx, timeouts, tamaño, formato y número de
+análisis por chat. La imagen se descarga a un temporal privado que se elimina
+siempre; nunca se guardan binarios, Base64 ni URLs.
+
+### 15.5 Reglas del Nivel 2
+
+- **Prioridad** = severidad (15/25/40/50) + superficie (0–25) + etapa (5/15/25).
+  Cuarentenaria = 100.
+- **Semáforo**: rojo 85–100, naranja 70–84, amarillo 40–69, verde 0–39.
+- **Técnico**: misma especialidad, carga < 5, menor distancia Haversine
+  (R = 6371 km) usando la hora `recibido`; empates por carga y luego por id.
+- **Brote**: 3 o más casos de la misma plaga a menos de 5 km en los últimos
+  7 días, contando el caso actual, casos previos y casos propios.
+
+### 15.6 Deduplicación
+
+- Se consulta siempre el registro previo antes de `POST /casos`.
+- Si la consulta ya está registrada, no se vuelve a enviar.
+- `REGISTRADOS_SESION` evita repetir el POST si falla el guardado local después
+  de una respuesta exitosa.
+- `estado.procesados` evita reprocesar reportes tras un reinicio.
+- En Telegram, el offset persistido y los IDs `TG-<chat_id>-<message_id>`
+  impiden duplicados.
+
+### 15.7 Telegram, panel y mapa
+
+- Bot con long polling, respuestas automáticas y análisis de fotos.
+- Los mensajes de Telegram **no** abren casos del reto ni usan `/casos`.
+- Panel: lista, detalle, filtros y búsqueda; distingue plagas confirmadas,
+  «No es plaga» y resultados visuales («Posible: …», «Imagen insuficiente»,
+  «Error de análisis», «Sin determinar»).
+- Mapa: `/api/mapa` con casos, brotes y técnicos.
+
+### 15.8 Pruebas
+
+**124 pruebas automatizadas, 0 fallidas**:
+
+- 36 de reglas del Nivel 2 (prioridad, semáforo, técnico, brote).
+- 60 de Telegram, visión y OpenRouter.
+- 17 del flujo oficial (`GET /reportes` → `POST /casos`).
+- 11 de etiquetas del panel.
+
+Además, el replay de `/casos-previos` mantiene **40/40** en prioridad,
+semáforo, técnico y brote.
+
+### 15.9 Variables de entorno (solo nombres)
+
+`TELEGRAM_BOT_TOKEN`, `EQUIPO_TOKEN`, `GEMINI_API_KEY`, `GEMINI_MODEL`,
+`GEMINI_MODELOS_ALTERNOS`, `COORDINADOR_CHAT_ID`, `SUPABASE_URL`,
+`SUPABASE_KEY`, `PORT`, `PROCESAR_REPORTES`, `RESPONDER_TELEGRAM`,
+`AVISAR_URGENTES`, `REGISTRAR_CASOS`, `PREGUNTAR`, `APROBAR_ANTES_DE_AVISAR`,
+`INTERVALO_REPORTES_MS`, `RITMO_MS`, `VISION_ENABLED`, `VISION_MAX_BYTES`,
+`VISION_TIMEOUT_MS`, `VISION_MAX_POR_CHAT`, `VISION_RETRY_AFTER_MAX_MS`,
+`VISION_MODEL`, `VISION_MODELOS_ALTERNOS`, `VISION_PROVIDER`,
+`VISION_PROVIDER_FALLBACK`, `OPENROUTER_API_KEY`, `OPENROUTER_VISION_MODEL`,
+`OPENROUTER_VISION_MODELOS_ALTERNOS`, `OPENROUTER_TIMEOUT_MS`.
+
+### 15.10 Instalación y despliegue
+
+```bash
+# Requisitos: Node.js >= 18
+cp .env.example .env      # completar las variables
+node server.js            # arranque manual
+npm test                  # 124 pruebas
+```
+
+En el servidor el proceso lo administra **Supervisor**:
+
+```bash
+supervisorctl status app
+supervisorctl restart app
+```
+
+### 15.11 Contribuciones
+
+- **Moises Israel Castro Reyes**: base del sistema Node.js, panel y mapa,
+  integración con Telegram, aprobación del coordinador, plazos, bitácora y
+  documentación.
+- **Arturo Hernández Hernández**: reglas del Nivel 2 (prioridad, semáforo,
+  técnico, brote), pruebas automatizadas, análisis visual con OpenRouter y
+  respaldo Gemini, deduplicación del registro y etiquetas del panel.
+
+### 15.12 Limitaciones conocidas
+
+- El panel no tiene autenticación en esta rama (el login vive en otra rama).
+- El análisis visual depende de la cuota del proveedor; si se agota, se pide
+  una descripción escrita al productor.
+- Sin pruebas automatizadas para aprobaciones, avisos a vecinos y plazos.
+- El autodespliegue del servidor apunta a otro repositorio/rama; mientras
+  `~/app` no sea un repositorio git, no lo sobrescribe.
+- No se implementó `/salud` en el servidor Node.
