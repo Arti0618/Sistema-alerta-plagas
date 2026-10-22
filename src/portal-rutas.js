@@ -13,6 +13,7 @@ const config = require('./config');
 const portal = require('./portal');
 const datos = require('./portal-datos');
 const store = require('./store');
+const vinculacion = require('./vinculacion');
 const agente = require('./agente');
 const reglas = require('./reglas');
 const vision = require('./vision');
@@ -73,6 +74,15 @@ function leerJson(req, limite = 3_000_000) {
     });
     req.on('error', reject);
   });
+}
+
+/** Límite de cuerpo de las rutas de vinculación (no se acepta nada grande). */
+const LIMITE_CUERPO_TELEGRAM = 2048;
+
+/** True si el cuerpo declarado ya excede el límite (evita leerlo entero). */
+function cuerpoDemasiado(req, limite) {
+  const largo = Number(req.headers['content-length'] || 0);
+  return Number.isFinite(largo) && largo > limite;
 }
 
 function redirigir(res, destino) {
@@ -204,6 +214,10 @@ async function apiProductor(req, res, url, sesion) {
   const ruta = url.pathname.slice(base.length);
   const pid = sesion.productor_id;
 
+  // Todas las rutas de productor necesitan una identidad oficial en sesión.
+  // No se acepta productor_id por URL, query, body ni cabeceras.
+  if (!pid) return enviarJson(res, 403, { error: 'No autorizado' });
+
   if (ruta === 'resumen' && req.method === 'GET') {
     return enviarJson(res, 200, await datos.resumenProductor(pid));
   }
@@ -290,6 +304,66 @@ async function apiProductor(req, res, url, sesion) {
       }
     }
     return enviarJson(res, 200, { alertas: alertas.slice(0, 5) });
+  }
+
+  /* ------------------------- vinculación Telegram ------------------------- */
+  if (ruta === 'telegram/estado' && req.method === 'GET') {
+    return enviarJson(res, 200, vinculacion.estadoProductor(pid));
+  }
+  if (ruta === 'telegram/codigo' && req.method === 'POST') {
+    if (!esJson(req)) return enviarJson(res, 415, { error: 'Formato no admitido.' });
+    if (!portal.csrfValido(req, sesion)) {
+      return enviarJson(res, 403, { error: 'Token CSRF inválido.' });
+    }
+    // Límite de cuerpo: se comprueba antes de leer para responder limpio.
+    if (cuerpoDemasiado(req, LIMITE_CUERPO_TELEGRAM)) {
+      if (typeof req.resume === 'function') req.resume();
+      return enviarJson(res, 413, { error: 'Solicitud demasiado grande.' });
+    }
+    try {
+      // El cuerpo se ignora a propósito: el productor_id sale solo de la sesión.
+      await leerJson(req, LIMITE_CUERPO_TELEGRAM);
+    } catch {
+      return enviarJson(res, 400, { error: 'Solicitud inválida o demasiado grande.' });
+    }
+    try {
+      const codigo = vinculacion.generarCodigo(pid);
+      return enviarJson(res, 200, {
+        ok: true,
+        codigo: codigo.codigo,
+        expira_en: codigo.expira_en,
+        segundos: codigo.segundos,
+        instrucciones: codigo.instrucciones,
+      });
+    } catch (err) {
+      if (err && err.codigo === 'no_disponible') {
+        return enviarJson(res, 503, { error: 'La vinculación no está configurada.' });
+      }
+      if (err && err.codigo === 'limite') {
+        return enviarJson(res, 429, { error: 'Demasiadas solicitudes. Espera unos minutos.' });
+      }
+      return enviarJson(res, 500, { error: 'No se pudo generar el código.' });
+    }
+  }
+  if (ruta === 'telegram/revocar' && req.method === 'POST') {
+    if (!esJson(req)) return enviarJson(res, 415, { error: 'Formato no admitido.' });
+    if (!portal.csrfValido(req, sesion)) {
+      return enviarJson(res, 403, { error: 'Token CSRF inválido.' });
+    }
+    if (cuerpoDemasiado(req, LIMITE_CUERPO_TELEGRAM)) {
+      if (typeof req.resume === 'function') req.resume();
+      return enviarJson(res, 413, { error: 'Solicitud demasiado grande.' });
+    }
+    try {
+      await leerJson(req, LIMITE_CUERPO_TELEGRAM);
+    } catch {
+      return enviarJson(res, 400, { error: 'Solicitud inválida o demasiado grande.' });
+    }
+    if (!vinculacion.permitirRevocacion(pid)) {
+      return enviarJson(res, 429, { error: 'Demasiadas solicitudes. Espera unos minutos.' });
+    }
+    const revocados = vinculacion.revocarProductor(pid);
+    return enviarJson(res, 200, { ok: true, revocados });
   }
 
   if (ruta === 'reporte' && req.method === 'POST') {

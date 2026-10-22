@@ -86,6 +86,30 @@ function botonesAprobacion(reporteId) {
   };
 }
 
+/**
+ * Teclado de parcelas para el productor. La callback_data solo lleva el nonce
+ * temporal y el índice; nunca el parcela_id ni el chat_id.
+ */
+function botonesParcelas(nonce, opciones) {
+  return {
+    inline_keyboard: (opciones || []).map((p) => [
+      {
+        text: `${p.nombre}${p.cultivo ? ` · ${p.cultivo}` : ''}`,
+        callback_data: `parcela:${nonce}:${p.indice}`,
+      },
+    ]),
+  };
+}
+
+function botonesDesvincular(nonce) {
+  return {
+    inline_keyboard: [
+      [{ text: 'Sí, desvincular', callback_data: `desvincular:${nonce}:si` }],
+      [{ text: 'Cancelar', callback_data: `desvincular:${nonce}:no` }],
+    ],
+  };
+}
+
 /** Teclado con la lista de técnicos candidatos para reasignar. */
 function botonesTecnicos(reporteId, tecnicos) {
   const filas = tecnicos.slice(0, 10).map((t) => [
@@ -104,6 +128,8 @@ module.exports = {
   nombreRemitente,
   tituloChat,
   botonesAprobacion,
+  botonesParcelas,
+  botonesDesvincular,
   botonesTecnicos,
   getMe: () => llamar('getMe'),
   eliminarWebhook: () => llamar('deleteWebhook', { drop_pending_updates: false }),

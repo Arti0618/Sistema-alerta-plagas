@@ -24,6 +24,8 @@
     detalle: null,
     foto: null,
     fotoUrl: null,
+    telegram: { disponible: false, vinculado: false, chats: 0 },
+    telegramTimer: null,
     mapa: {
       svg: null,
       capaTeselas: null,
@@ -807,6 +809,133 @@
     if (estado.activa) centrarEnParcela(estado.activa);
   }
 
+  /* ------------------------------ Telegram --------------------------------- */
+
+  function telegramError(msg) {
+    const e = $('telegramError');
+    e.textContent = msg || '';
+    e.hidden = !msg;
+  }
+
+  function detenerContadorTelegram() {
+    if (estado.telegramTimer) {
+      clearInterval(estado.telegramTimer);
+      estado.telegramTimer = null;
+    }
+  }
+
+  function iniciarContadorTelegram(expiraEn) {
+    detenerContadorTelegram();
+    const fin = new Date(expiraEn).getTime();
+    if (!Number.isFinite(fin)) return;
+    const pintar = () => {
+      const restante = Math.max(0, Math.ceil((fin - Date.now()) / 1000));
+      const min = Math.floor(restante / 60);
+      const seg = String(restante % 60).padStart(2, '0');
+      $('telegramTiempo').textContent = restante
+        ? `El código caduca en ${min}:${seg}.`
+        : 'El código caducó. Genera uno nuevo.';
+      if (!restante) {
+        detenerContadorTelegram();
+        $('telegramCodigoCaja').hidden = true;
+      }
+    };
+    pintar();
+    estado.telegramTimer = setInterval(pintar, 1000);
+  }
+
+  function pintarTelegram(d) {
+    const t = d || {};
+    estado.telegram = t;
+    $('telegramError').hidden = true;
+    if (t.disponible === false) {
+      detenerContadorTelegram();
+      $('telegramCodigoCaja').hidden = true;
+      $('telegramChip').textContent = 'No disponible';
+      $('telegramEstado').textContent =
+        'La vinculación con Telegram no está configurada. Contacta al equipo técnico.';
+      $('telegramParcela').textContent = '';
+      $('btnGenerarCodigo').disabled = true;
+      $('btnRevocarTelegram').hidden = true;
+      return;
+    }
+    $('btnGenerarCodigo').disabled = false;
+    if (!t.vinculado) {
+      $('telegramChip').textContent = 'Sin vínculo';
+      $('telegramEstado').textContent =
+        'Aún no hay un chat de Telegram vinculado a tu cuenta. Genera un código para comenzar.';
+      $('telegramParcela').textContent = '';
+      $('btnRevocarTelegram').hidden = true;
+      return;
+    }
+    $('telegramChip').textContent = t.listo ? 'Vínculo activo' : 'Sin parcela';
+    $('telegramEstado').textContent =
+      t.chats > 1
+        ? `Tu cuenta tiene ${t.chats} chats de Telegram vinculados.`
+        : 'Tu chat de Telegram está vinculado a tu cuenta.';
+    $('telegramParcela').textContent = t.parcela_nombre
+      ? `Parcela activa: ${t.parcela_nombre}${t.cultivo ? ` · ${t.cultivo}` : ''}${
+          t.etapa ? ` · etapa ${t.etapa}` : ''
+        }.`
+      : 'Aún no hay una parcela activa. Envía /parcelas al bot para elegirla.';
+    $('btnRevocarTelegram').hidden = false;
+  }
+
+  async function cargarTelegram() {
+    try {
+      const d = await api('/api/productor/telegram/estado');
+      pintarTelegram(d);
+    } catch (err) {
+      telegramError(err.message || 'No se pudo consultar el vínculo de Telegram.');
+    }
+  }
+
+  async function generarCodigoTelegram() {
+    telegramError('');
+    $('btnGenerarCodigo').disabled = true;
+    $('btnGenerarCodigo').textContent = 'Generando…';
+    try {
+      const d = await api('/api/productor/telegram/codigo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': estado.csrf },
+        body: JSON.stringify({}),
+      });
+      $('telegramCodigo').textContent = d.codigo;
+      $('telegramInstrucciones').textContent =
+        d.instrucciones || `Envía este mensaje al bot: /vincular ${d.codigo}`;
+      $('telegramCodigoCaja').hidden = false;
+      iniciarContadorTelegram(d.expira_en);
+      await cargarTelegram();
+    } catch (err) {
+      telegramError(err.message || 'No se pudo generar el código.');
+    } finally {
+      $('btnGenerarCodigo').disabled = estado.telegram.disponible === false;
+      $('btnGenerarCodigo').textContent = 'Generar código';
+    }
+  }
+
+  async function revocarTelegram() {
+    if (!window.confirm('¿Revocar el vínculo de Telegram? No se borrarán tus reportes anteriores.')) {
+      return;
+    }
+    telegramError('');
+    $('btnRevocarTelegram').disabled = true;
+    try {
+      await api('/api/productor/telegram/revocar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': estado.csrf },
+        body: JSON.stringify({}),
+      });
+      $('telegramCodigoCaja').hidden = true;
+      detenerContadorTelegram();
+      await cargarTelegram();
+    } catch (err) {
+      telegramError(err.message || 'No se pudo revocar el vínculo.');
+    } finally {
+      $('btnRevocarTelegram').disabled = false;
+    }
+  }
+
   /* --------------------------------- eventos -------------------------------- */
 
   function initEventos() {
@@ -944,6 +1073,9 @@
       { passive: false },
     );
 
+    $('btnGenerarCodigo').addEventListener('click', generarCodigoTelegram);
+    $('btnRevocarTelegram').addEventListener('click', revocarTelegram);
+
     $('formReporte').addEventListener('submit', (e) => {
       e.preventDefault();
       enviarReporte();
@@ -986,6 +1118,7 @@
       estado.avisos = avisos.avisos || [];
 
       initEventos();
+      await cargarTelegram();
       activarPestana(pestanaInicial());
       pintarParcelas();
       crearMapa();

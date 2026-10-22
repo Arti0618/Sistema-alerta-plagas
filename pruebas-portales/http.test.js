@@ -18,6 +18,7 @@ const config = {
   portalCoordinadorPassword: 'coordinacion-ficticia',
   portalEnviarCasoOficial: false,
   visionHabilitado: false,
+  telegramVinculoSecret: 'secreto-ficticio-de-prueba',
   publicDir: path.join(RAIZ, 'public'),
   mapTileProvider: 'openstreetmap',
   mapTileUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -36,6 +37,7 @@ const consultas = [
   { id: 'R-3', productor_id: 'PR-1', parcela_id: 'P-2', semaforo: 'amarillo', estado: 'cerrado', brote: false, recibido: '2026-10-20T10:00:00Z' },
 ];
 
+const almacen = new Map();
 const store = {
   listaConsultas: () => consultas,
   obtenerConsulta: (id) => consultas.find((c) => c.id === id) || null,
@@ -44,6 +46,12 @@ const store = {
     consultas.unshift(c);
     return c;
   },
+  getAlmacen: (clave, porDefecto = null) => (almacen.has(clave) ? almacen.get(clave) : porDefecto),
+  setAlmacen: (clave, datos) => {
+    almacen.set(clave, datos);
+    return datos;
+  },
+  guardarAlmacen: () => {},
 };
 
 const api = {
@@ -88,6 +96,7 @@ doble('tecnicos', {
 
 const portal = require(ruta('portal'));
 const rutas = require(ruta('portal-rutas'));
+const vinculacion = require(ruta('vinculacion'));
 
 global.fetch = async () => {
   throw new Error('fetch real prohibido en las pruebas');
@@ -95,7 +104,7 @@ global.fetch = async () => {
 
 let contadorIp = 0;
 
-function peticion({ metodo = 'GET', destino = '/', cookie = '', csrf = '', cuerpo = null, tipo = 'application/json', ip: ipFija = null } = {}) {
+function peticion({ metodo = 'GET', destino = '/', cookie = '', csrf = '', cuerpo = null, tipo = 'application/json', ip: ipFija = null, largo = null } = {}) {
   contadorIp += 1;
   const ip = ipFija || `10.1.0.${contadorIp}`;
   const req = new EventEmitter();
@@ -107,6 +116,7 @@ function peticion({ metodo = 'GET', destino = '/', cookie = '', csrf = '', cuerp
     'x-forwarded-for': ip,
     'x-csrf-token': csrf,
     ...(cuerpo ? { 'content-type': tipo } : {}),
+    ...(largo !== null ? { 'content-length': String(largo) } : {}),
   };
   req.socket = { remoteAddress: ip };
 
@@ -471,4 +481,166 @@ test('ninguna respuesta contiene contraseñas ni claves', async () => {
     const res = await peticion({ destino, cookie });
     assert.ok(!/contrasena|password|productores-ficticia|coordinacion-ficticia|supabase|SUPABASE/i.test(res.body), destino);
   }
+});
+
+/* ------------------------- vinculación con Telegram ----------------------- */
+
+test('el estado de Telegram exige sesión de productor y no revela el productor_id', async () => {
+  almacen.clear();
+  vinculacion._reiniciarLimites();
+  const sinSesion = await peticion({ destino: '/api/productor/telegram/estado' });
+  assert.strictEqual(sinSesion.statusCode, 401);
+
+  const coordinador = cookieSesion({ rol: 'coordinador' });
+  const rolIncorrecto = await peticion({
+    destino: '/api/productor/telegram/estado',
+    cookie: coordinador.cookie,
+  });
+  assert.strictEqual(rolIncorrecto.statusCode, 403);
+
+  const { cookie } = cookieSesion({ rol: 'productor', productor_id: 'PR-1' });
+  const res = await peticion({ destino: '/api/productor/telegram/estado', cookie });
+  assert.strictEqual(res.statusCode, 200);
+  const datos = json(res);
+  assert.strictEqual(datos.disponible, true);
+  assert.strictEqual(datos.vinculado, false);
+  assert.ok(!/PR-1|chat_id|telegram_chat_id/i.test(res.body));
+});
+
+test('generar código exige JSON, CSRF y usa solo el productor de la sesión', async () => {
+  almacen.clear();
+  vinculacion._reiniciarLimites();
+  const { cookie, csrf } = cookieSesion({ rol: 'productor', productor_id: 'PR-1' });
+
+  const sinCsrf = await peticion({
+    metodo: 'POST',
+    destino: '/api/productor/telegram/codigo',
+    cookie,
+    cuerpo: {},
+  });
+  assert.strictEqual(sinCsrf.statusCode, 403);
+
+  const tipoMalo = await peticion({
+    metodo: 'POST',
+    destino: '/api/productor/telegram/codigo',
+    cookie,
+    csrf,
+    cuerpo: {},
+    tipo: 'text/plain',
+  });
+  assert.strictEqual(tipoMalo.statusCode, 415);
+
+  const res = await peticion({
+    metodo: 'POST',
+    destino: '/api/productor/telegram/codigo',
+    cookie,
+    csrf,
+    cuerpo: { productor_id: 'PR-2' },
+  });
+  assert.strictEqual(res.statusCode, 200);
+  const datos = json(res);
+  assert.match(datos.codigo, /^[A-Z2-9]{8}$/);
+  assert.ok(!/PR-1|PR-2|chat_id/i.test(res.body));
+
+  const pendientes = almacen.get('telegram_codigos');
+  const registros = Object.values(pendientes.items);
+  assert.strictEqual(registros.length, 1);
+  assert.strictEqual(registros[0].productor_id, 'PR-1');
+  assert.ok(!JSON.stringify(pendientes).includes(datos.codigo));
+});
+
+test('el límite de generación de códigos devuelve 429', async () => {
+  almacen.clear();
+  vinculacion._reiniciarLimites();
+  const { cookie, csrf } = cookieSesion({ rol: 'productor', productor_id: 'PR-3' });
+  for (let i = 0; i < 5; i++) {
+    const res = await peticion({
+      metodo: 'POST',
+      destino: '/api/productor/telegram/codigo',
+      cookie,
+      csrf,
+      cuerpo: {},
+    });
+    assert.strictEqual(res.statusCode, 200);
+  }
+  const bloqueado = await peticion({
+    metodo: 'POST',
+    destino: '/api/productor/telegram/codigo',
+    cookie,
+    csrf,
+    cuerpo: {},
+  });
+  assert.strictEqual(bloqueado.statusCode, 429);
+});
+
+test('un cuerpo demasiado grande se rechaza antes de generar el código', async () => {
+  almacen.clear();
+  vinculacion._reiniciarLimites();
+  const { cookie, csrf } = cookieSesion({ rol: 'productor', productor_id: 'PR-5' });
+  const res = await peticion({
+    metodo: 'POST',
+    destino: '/api/productor/telegram/codigo',
+    cookie,
+    csrf,
+    cuerpo: { relleno: 'x'.repeat(5000) },
+    largo: 5200,
+  });
+  assert.strictEqual(res.statusCode, 413);
+  const pendientes = almacen.get('telegram_codigos');
+  assert.ok(!pendientes || Object.keys(pendientes.items || {}).length === 0);
+});
+
+test('revocar desde Mi Campo invalida el vínculo sin borrar consultas', async () => {
+  almacen.clear();
+  vinculacion._reiniciarLimites();
+  const codigo = vinculacion.generarCodigo('PR-1').codigo;
+  const enlace = await vinculacion.vincularConCodigo('chat-http-1', codigo);
+  assert.strictEqual(enlace.ok, true);
+  const consultasAntes = consultas.length;
+
+  const { cookie, csrf } = cookieSesion({ rol: 'productor', productor_id: 'PR-1' });
+  const sinCsrf = await peticion({
+    metodo: 'POST',
+    destino: '/api/productor/telegram/revocar',
+    cookie,
+    cuerpo: {},
+  });
+  assert.strictEqual(sinCsrf.statusCode, 403);
+
+  const res = await peticion({
+    metodo: 'POST',
+    destino: '/api/productor/telegram/revocar',
+    cookie,
+    csrf,
+    cuerpo: {},
+  });
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(json(res).revocados, 1);
+  assert.strictEqual(vinculacion.estadoProductor('PR-1').vinculado, false);
+  assert.strictEqual(consultas.length, consultasAntes);
+  assert.ok(!/chat-http-1|telegram_chat_id/i.test(res.body));
+});
+
+test('revocar también tiene un límite de solicitudes', async () => {
+  almacen.clear();
+  vinculacion._reiniciarLimites();
+  const { cookie, csrf } = cookieSesion({ rol: 'productor', productor_id: 'PR-4' });
+  for (let i = 0; i < 5; i += 1) {
+    const res = await peticion({
+      metodo: 'POST',
+      destino: '/api/productor/telegram/revocar',
+      cookie,
+      csrf,
+      cuerpo: {},
+    });
+    assert.strictEqual(res.statusCode, 200);
+  }
+  const bloqueado = await peticion({
+    metodo: 'POST',
+    destino: '/api/productor/telegram/revocar',
+    cookie,
+    csrf,
+    cuerpo: {},
+  });
+  assert.strictEqual(bloqueado.statusCode, 429);
 });

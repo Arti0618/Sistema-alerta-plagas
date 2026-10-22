@@ -197,3 +197,29 @@ test('estructura responsive sin anchos rígidos', () => {
   assert.match(css, /\.parcela-movil\s*\{\s*display:\s*grid/);
   assert.match(css, /\.mapa-caja\.mapa--contraido/);
 });
+
+/* ------------------------- vinculación con Telegram ---------------------- */
+
+test('Mi Campo incluye Vincular Telegram fuera de las tres pestañas', () => {
+  assert.match(html, /id="tituloVinculoTelegram"/);
+  assert.match(html, /Vincular Telegram/);
+  assert.match(html, /id="btnGenerarCodigo"/);
+  assert.match(html, /id="btnRevocarTelegram"/);
+  assert.match(html, /id="telegramEstado"/);
+  assert.match(html, /id="telegramCodigo"/);
+  assert.match(html, /id="telegramTiempo"/);
+  const seccion = html.slice(html.indexOf('<section class="vinculo-telegram"'));
+  assert.ok(seccion.includes('Vincular Telegram'));
+  assert.ok(!seccion.includes('role="tabpanel"'), 'la sección no vive dentro de una pestaña');
+  assert.strictEqual((html.match(/role="tab"/g) || []).length, 3);
+  assert.strictEqual((html.match(/role="tabpanel"/g) || []).length, 3);
+});
+
+test('la UI de vinculación usa los endpoints protegidos y no guarda el código', () => {
+  assert.match(js, /\/api\/productor\/telegram\/estado/);
+  assert.match(js, /\/api\/productor\/telegram\/codigo/);
+  assert.match(js, /\/api\/productor\/telegram\/revocar/);
+  assert.ok(js.includes('X-CSRF-Token'));
+  assert.ok(!/localStorage[^;]*(telegram|codigo)/i.test(js));
+  assert.ok(!/['"]\/api\/(casos|preguntas|avisos)['"]/.test(js));
+});

@@ -394,6 +394,14 @@ th { color: var(--apagado); font-weight: 600; font-size: 12.5px; text-transform:
 .vista-previa img { width: 100%; max-height: 180px; object-fit: contain; border-radius: 10px; border: 1px solid var(--linea); background: #000; }
 .vista-previa .btn { justify-self: start; padding: 7px 11px; font-size: 13px; }
 
+.vinculo-telegram { border-top: 1px solid var(--linea); margin-top: 18px; padding: 16px; display: grid; gap: 10px; }
+.vinculo-telegram__cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.vinculo-telegram h2 { margin: 0; font-size: 16px; }
+.vinculo-telegram__acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+.vinculo-telegram__acciones .btn { padding: 8px 12px; font-size: 13px; }
+.vinculo-telegram code { font-size: 1.15em; letter-spacing: .12em; color: #b8ebd2; }
+.vinculo-telegram #telegramError { margin: 0; }
+
 .detalle-caso { border: 1px solid rgba(63, 169, 201, .45); background: var(--cian-suave); border-radius: 12px; padding: 12px; margin: 10px 0; display: grid; gap: 6px; }
 .detalle-caso__cab { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .detalle-caso h3 { margin: 0; font-size: 15px; color: var(--texto); text-transform: none; letter-spacing: 0; }

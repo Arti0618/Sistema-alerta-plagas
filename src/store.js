@@ -43,6 +43,17 @@ let estadoMem = {
 };
 let telegramMem = { bot: null, offset: 0, chats: {}, messages: {} };
 
+// Claves auxiliares de app_almacen. La vinculación de Telegram no reutiliza
+// las filas históricas de estado/telegram: guarda sus propios documentos.
+const almacenExtraMem = new Map();
+const CLAVES_VINCULACION = [
+  'telegram_vinculos',
+  'telegram_codigos',
+  'telegram_codigos_usados',
+  'telegram_nonces',
+  'telegram_updates',
+];
+
 let cargado = false;
 
 /* ------------------------------------------------------------------ */
@@ -73,11 +84,50 @@ function escribirJsonLocal(nombre, datos) {
   }
 }
 
+/**
+ * Respaldo de vinculación: escritura atómica (temporal + rename) y permisos
+ * 0600. Nunca escribe chats en claro: los documentos ya contienen solo HMAC.
+ */
+function escribirJsonPrivado(nombre, datos) {
+  const destino = rutaDe(nombre);
+  const temporal = `${destino}.${process.pid}.tmp`;
+  try {
+    const fd = fs.openSync(temporal, 'w', 0o600);
+    try {
+      fs.writeFileSync(fd, JSON.stringify(datos, null, 2), 'utf8');
+      try {
+        fs.fsyncSync(fd);
+      } catch {
+        /* algunos sistemas de archivos no permiten fsync */
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(temporal, destino);
+    try {
+      fs.chmodSync(destino, 0o600);
+    } catch {
+      /* Windows puede ignorar chmod; no se registra el contenido */
+    }
+  } catch (err) {
+    try {
+      fs.unlinkSync(temporal);
+    } catch {
+      /* el temporal pudo no haberse creado */
+    }
+    console.error(`[store] no se pudo escribir el respaldo privado ${nombre}: ${err.message}`);
+  }
+}
+
 function cargarDesdeArchivosLocales() {
   const consultas = leerJsonLocal('consultas.json', { items: [] });
   consultasMem = Array.isArray(consultas.items) ? consultas.items : [];
   estadoMem = { ...estadoMem, ...leerJsonLocal('estado.json', estadoMem) };
   telegramMem = { ...telegramMem, ...leerJsonLocal('telegram.json', telegramMem) };
+  for (const clave of CLAVES_VINCULACION) {
+    const datos = leerJsonLocal(`${clave}.json`, null);
+    if (datos) almacenExtraMem.set(clave, datos);
+  }
   console.log(`[store] cargado del respaldo local: ${consultasMem.length} consultas`);
 }
 
@@ -95,10 +145,12 @@ async function cargar() {
         supa.traerTodo('app_almacen'),
       ]);
       consultasMem = filas.map((f) => f.datos).filter(Boolean);
-      const estadoFila = almacen.find((a) => a.clave === 'estado');
-      const telegramFila = almacen.find((a) => a.clave === 'telegram');
-      if (estadoFila?.datos) estadoMem = { ...estadoMem, ...estadoFila.datos };
-      if (telegramFila?.datos) telegramMem = { ...telegramMem, ...telegramFila.datos };
+      for (const fila of almacen || []) {
+        if (!fila || !fila.clave || !fila.datos) continue;
+        if (fila.clave === 'estado') estadoMem = { ...estadoMem, ...fila.datos };
+        else if (fila.clave === 'telegram') telegramMem = { ...telegramMem, ...fila.datos };
+        else almacenExtraMem.set(fila.clave, fila.datos);
+      }
       console.log(
         `[store] cargado desde Supabase: ${consultasMem.length} consultas, ` +
           `${Object.keys(telegramMem.chats || {}).length} chats de Telegram`,
@@ -165,9 +217,14 @@ function programarGuardadoConsulta(id) {
 
 async function guardarAlmacenAhora(clave) {
   timersAlmacen.delete(clave);
-  const datos = clave === 'estado' ? estadoMem : telegramMem;
+  let datos;
+  if (clave === 'estado') datos = estadoMem;
+  else if (clave === 'telegram') datos = telegramMem;
+  else datos = almacenExtraMem.get(clave);
+  if (!datos) return;
 
-  escribirJsonLocal(`${clave}.json`, datos);
+  if (clave.startsWith('telegram_')) escribirJsonPrivado(`${clave}.json`, datos);
+  else escribirJsonLocal(`${clave}.json`, datos);
 
   if (!config.usaSupabase) return;
   try {
@@ -338,6 +395,32 @@ function incrementarMetrica(clave, delta = 1) {
   programarGuardadoAlmacen('estado');
 }
 
+/* ------------------------------- almacén extra ---------------------------- */
+
+/** Devuelve una clave auxiliar de app_almacen (o el valor por defecto). */
+function getAlmacen(clave, porDefecto = null) {
+  const nombre = String(clave || '');
+  if (nombre === 'estado') return estadoMem;
+  if (nombre === 'telegram') return telegramMem;
+  return almacenExtraMem.has(nombre) ? almacenExtraMem.get(nombre) : porDefecto;
+}
+
+/** Reemplaza una clave auxiliar en memoria y programa su guardado. */
+function setAlmacen(clave, datos) {
+  const nombre = String(clave || '');
+  if (!nombre || nombre === 'estado' || nombre === 'telegram') {
+    throw new Error('Clave de almacén no válida');
+  }
+  almacenExtraMem.set(nombre, datos);
+  programarGuardadoAlmacen(nombre);
+  return datos;
+}
+
+function guardarAlmacen(clave) {
+  if (timersAlmacen.has(clave)) return;
+  programarGuardadoAlmacen(clave);
+}
+
 /* -------------------------------- telegram ------------------------------- */
 
 function getTelegram() {
@@ -362,5 +445,8 @@ module.exports = {
   fijarUltimoDesde,
   fijarUltimoTecnicoCheck,
   incrementarMetrica,
+  getAlmacen,
+  setAlmacen,
+  guardarAlmacen,
   getTelegram,
 };

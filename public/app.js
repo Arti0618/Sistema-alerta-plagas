@@ -161,14 +161,33 @@ function dato(clave, valor) {
  * Semáforo del caso. Desde el Nivel 2 el campo `semaforo` es un texto
  * (rojo / naranja / amarillo / verde) y `prioridad` es un número de 0 a 100.
  */
+function esAnalisisTelegram(c) {
+  return Boolean(c && c.fuente === 'telegram' && (c.caso_oficial === false || c.estado_local === 'analizado'));
+}
+
+function productorVisible(c) {
+  // En análisis locales no se muestra el productor_id oficial completo.
+  return c.productor || (esAnalisisTelegram(c) ? '—' : c.productor_id) || '—';
+}
+
 function etiquetaUrgencia(c) {
+  // Un análisis de Telegram es orientación local: aunque tenga semáforo
+  // calculado, no debe parecer un caso oficial registrado.
+  if (c.fuente === 'telegram') {
+    if (!c.productor_id && !c.parcela_id) return { texto: 'Sin vínculo', clase: 'e-neutra' };
+    if (!c.parcela_id) return { texto: 'Sin parcela', clase: 'e-neutra' };
+    if (c.caso_oficial === false || c.estado_local === 'analizado') {
+      return { texto: 'Analizado localmente', clase: 'e-neutra' };
+    }
+    // Un caso oficial de Telegram sí conserva su semáforo real.
+  }
+
   if (c.semaforo === 'rojo') return { texto: 'ROJO', clase: 'e-rojo' };
   if (c.semaforo === 'naranja') return { texto: 'NARANJA', clase: 'e-naranja' };
   if (c.semaforo === 'amarillo') return { texto: 'AMARILLO', clase: 'e-amarillo' };
   if (c.semaforo === 'verde') return { texto: 'VERDE', clase: 'e-verde' };
 
   // Sin semáforo: explicar por qué, para que no parezca un error.
-  if (c.fuente === 'telegram') return { texto: 'chat directo', clase: 'e-neutra' };
   if (c.es_respuesta) return { texto: 'respuesta', clase: 'e-neutra' };
   if (c.es_seguimiento) return { texto: 'seguimiento', clase: 'e-neutra' };
   if (c.es_plaga === false) return { texto: 'no es plaga', clase: 'e-neutra' };
@@ -228,8 +247,8 @@ function renderConsultas() {
     fila.append(el('div', 'fila__fecha', fecha(c.recibido)));
 
     const productor = el('div', 'fila__productor');
-    productor.textContent = c.productor || c.productor_id || '—';
-    productor.title = c.productor_id || '';
+    productor.textContent = productorVisible(c);
+    productor.title = esAnalisisTelegram(c) ? '' : c.productor_id || '';
     fila.append(productor);
 
     const titulo = el('div', 'fila__titulo');
@@ -260,7 +279,13 @@ function renderConsultas() {
       texto = 'Registrado';
     } else if (c.fuente === 'telegram') {
       punto.classList.add('punto--gris');
-      texto = 'Contestada';
+      if (!c.productor_id && !c.parcela_id) texto = 'Sin vínculo';
+      else if (!c.parcela_id) texto = 'Sin parcela';
+      else if (c.caso_oficial === false || c.estado_local === 'analizado') {
+        texto = 'No registrado oficialmente';
+      } else {
+        texto = 'Contestada';
+      }
     } else {
       punto.classList.add('punto--aviso');
       texto = 'Pendiente';
@@ -328,7 +353,14 @@ function renderDetalle() {
   }
   cuerpo.append(cabecera);
 
-  cuerpo.append(dato('Productor', `${c.productor || '—'} (${c.productor_id || '—'})`));
+  cuerpo.append(
+    dato(
+      'Productor',
+      esAnalisisTelegram(c)
+        ? productorVisible(c)
+        : `${c.productor || '—'} (${c.productor_id || '—'})`,
+    ),
+  );
   cuerpo.append(dato('Parcela', c.parcela ? `${c.parcela} (${c.parcela_id})` : c.parcela_id || '—'));
   cuerpo.append(dato('Cultivo', c.cultivo ? `${c.cultivo}${c.etapa ? ` · etapa ${c.etapa}` : ''}` : '—'));
   cuerpo.append(dato('Localidad', c.localidad || '—'));

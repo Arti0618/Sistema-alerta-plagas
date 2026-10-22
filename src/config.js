@@ -59,6 +59,11 @@ const config = {
   supabaseUrl: (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, ''),
   supabaseKey: (process.env.SUPABASE_KEY || '').trim(),
 
+  // Secreto independiente para HMAC de chats y códigos de vinculación de
+  // Telegram. Sin este valor la vinculación queda deshabilitada: no se usa una
+  // clave fija ni se reutiliza el token del bot.
+  telegramVinculoSecret: (process.env.TELEGRAM_VINCULO_SECRET || '').trim(),
+
   // Servicios
   geminiModel: si('GEMINI_MODEL', 'gemini-3.5-flash'),
   geminiAlternos: si(
@@ -126,7 +131,11 @@ const config = {
   mapTileMaxZoom: Number(si('MAP_TILE_MAX_ZOOM', 19)),
 
   // Rutas
-  dataDir: path.join(ROOT, 'data'),
+  // DATA_DIR permite aislar el respaldo local (pruebas, réplicas). Si no se
+  // define, se usa la carpeta data/ del proyecto como siempre.
+  dataDir: process.env.DATA_DIR
+    ? path.resolve(process.env.DATA_DIR)
+    : path.join(ROOT, 'data'),
   publicDir: path.join(ROOT, 'public'),
 };
 

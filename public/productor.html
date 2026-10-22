@@ -144,6 +144,31 @@
           <h3>Visitas</h3>
           <div class="lista" id="visitas"></div>
         </section>
+
+        <section class="vinculo-telegram" aria-labelledby="tituloVinculoTelegram">
+          <div class="vinculo-telegram__cab">
+            <div>
+              <p class="eyebrow">Telegram</p>
+              <h2 id="tituloVinculoTelegram">Vincular Telegram</h2>
+            </div>
+            <span class="chip chip--neutro" id="telegramChip" aria-live="polite">Sin vínculo</span>
+          </div>
+          <p class="ayuda" id="telegramEstado" role="status" aria-live="polite">
+            Consultando el estado de tu vínculo…
+          </p>
+          <p class="ayuda" id="telegramParcela"></p>
+          <div class="vinculo-telegram__acciones">
+            <button class="btn btn--cian" type="button" id="btnGenerarCodigo">Generar código</button>
+            <button class="btn btn--fantasma" type="button" id="btnRevocarTelegram" hidden>Revocar vínculo</button>
+          </div>
+          <div class="aviso aviso--ok" id="telegramCodigoCaja" hidden>
+            <p><strong>Tu código de un solo uso:</strong> <code id="telegramCodigo"></code></p>
+            <p class="ayuda" id="telegramInstrucciones"></p>
+            <p class="ayuda" id="telegramTiempo" role="timer" aria-live="off"></p>
+            <p class="ayuda">El código no se guarda en esta página. Si lo pierdes, genera otro.</p>
+          </div>
+          <p class="aviso aviso--mal" id="telegramError" role="alert" hidden></p>
+        </section>
       </aside>
 
     </div>

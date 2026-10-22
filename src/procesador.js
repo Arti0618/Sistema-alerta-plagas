@@ -21,6 +21,7 @@ const derivados = require('./derivados');
 const aprobaciones = require('./aprobaciones');
 const plazos = require('./plazos');
 const store = require('./store');
+const vinculacion = require('./vinculacion');
 const { dormir } = require('./gemini');
 const vision = require('./vision');
 
@@ -764,10 +765,21 @@ async function bucleReportes() {
 /* Bucle B: Telegram (contesta solo)                                   */
 /* ------------------------------------------------------------------ */
 
+function redactarCodigoTelegram(texto) {
+  // El código de vinculación no debe quedar en el historial del panel ni en
+  // los respaldos. El mensaje original se usa solo para procesar el comando.
+  return String(texto || '').replace(
+    /(^\s*\/vincular(?:@[a-z0-9_]+)?\s+)[\s\S]*$/i,
+    '$1••••••',
+  );
+}
+
 function guardarMensajeTelegram(msg, direccion, extra = {}) {
   const tg = store.getTelegram();
   const chatId = String(msg.chat.id);
-  const { texto, clase } = telegram.describirMensaje(msg);
+  const descrito = telegram.describirMensaje(msg);
+  const texto = redactarCodigoTelegram(descrito.texto);
+  const clase = descrito.clase;
   const fecha = (msg.date || Math.floor(Date.now() / 1000)) * 1000;
 
   const actual = tg.chats[chatId] || {
@@ -829,7 +841,9 @@ function idConsultaTelegram(chatId, messageId) {
 
 /** Busca la consulta de un mensaje: primero el formato nuevo, luego el viejo. */
 function buscarConsultaTelegram(chatId, messageId, msg) {
-  const nueva = store.obtenerConsulta(idConsultaTelegram(chatId, messageId));
+  const nueva =
+    store.obtenerConsulta(idConsultaTelegram(chatId, messageId)) ||
+    store.obtenerConsulta(idConsultaTelegramLocal(chatId, messageId));
   if (nueva) return nueva;
 
   const vieja = store.obtenerConsulta(`TG-${messageId}`);
@@ -848,6 +862,140 @@ const TEXTO_PEDIR_DESCRIPCION =
   'Recibí tu foto. Para poder ayudarte necesito una descripción escrita: ' +
   '¿de qué cultivo se trata, qué síntomas ves y desde cuándo?';
 
+/* ------------------------------------------------------------------ */
+/* Identidad del chat y respuestas administrativas deterministas       */
+/* ------------------------------------------------------------------ */
+
+function hashChatSeguro(chatId) {
+  try {
+    if (typeof vinculacion.huellaChat === 'function') return vinculacion.huellaChat(chatId);
+    return vinculacion.hashChat(chatId);
+  } catch {
+    return null;
+  }
+}
+
+function idConsultaTelegramLocal(chatId, messageId) {
+  // Para los análisis locales, el identificador tampoco debe hacer visible el
+  // chat en los respaldos ni en la API.
+  const huella = hashChatSeguro(chatId);
+  return `TG-${huella || 'sin-huella'}-${messageId}`;
+}
+
+function idsLocalesHash() {
+  try {
+    return Boolean(typeof vinculacion.disponible === 'function' && vinculacion.disponible());
+  } catch {
+    return false;
+  }
+}
+
+function idConsultaDe(chatId, messageId, vinculado) {
+  // Con la función de vinculación configurada se usa siempre la huella, incluso
+  // para un chat aún no vinculado. Sin secreto se conserva el formato antiguo
+  // para no romper los registros históricos.
+  return vinculado || idsLocalesHash()
+    ? idConsultaTelegramLocal(chatId, messageId)
+    : idConsultaTelegram(chatId, messageId);
+}
+
+/**
+ * Devuelve el contexto de un chat:
+ *   { sinVinculo: true }  -> no hay vínculo activo
+ *   { activo: true, ... } -> hay vínculo; hay que revisar revalidarVinculo()
+ */
+async function revisionChat(chatId) {
+  if (!vinculacion.disponible()) return { sinVinculo: true };
+  if (!vinculacion.estadoChat(chatId)) return { sinVinculo: true };
+  const revision = await vinculacion.revalidarVinculo(chatId);
+  if (revision.motivo === 'sin_vinculo') return { sinVinculo: true };
+  return { activo: true, ...revision };
+}
+
+function tecladoDeSeleccion(selector) {
+  if (!selector || !selector.nonce || typeof telegram.botonesParcelas !== 'function') return null;
+  return telegram.botonesParcelas(selector.nonce, selector.opciones || []);
+}
+
+function prepararRespuestaComando(respuesta) {
+  if (!respuesta || !respuesta.teclado) return respuesta;
+  const t = respuesta.teclado;
+  if (t.inline_keyboard) return respuesta;
+  if (t.accion === 'desvincular' && t.nonce) {
+    return {
+      ...respuesta,
+      teclado:
+        typeof telegram.botonesDesvincular === 'function'
+          ? telegram.botonesDesvincular(t.nonce)
+          : null,
+    };
+  }
+  if (t.nonce && Array.isArray(t.opciones)) {
+    return {
+      ...respuesta,
+      teclado:
+        typeof telegram.botonesParcelas === 'function'
+          ? telegram.botonesParcelas(t.nonce, t.opciones)
+          : null,
+    };
+  }
+  return { ...respuesta, teclado: null };
+}
+
+function respuestaParcelaPendiente(chatId, revision) {
+  if (!revision || revision.ok) return null;
+  if (revision.motivo === 'sin_parcelas') {
+    return { texto: vinculacion.MENSAJES.sinParcelas };
+  }
+  if (revision.motivo === 'api_no_disponible') {
+    return {
+      texto: 'No pudimos validar tu cuenta y tu parcela en este momento. Intenta de nuevo más tarde.',
+    };
+  }
+  if (revision.motivo === 'productor_inexistente') {
+    return {
+      texto:
+        'No encontramos una cuenta de productor válida para este vínculo. ' +
+        'Contacta a la Junta; no se registró ningún caso.',
+    };
+  }
+  if (revision.motivo === 'parcela_invalida' || revision.motivo === 'sin_parcela_activa') {
+    if (!revision.parcelas || revision.parcelas.length === 0) {
+      return { texto: vinculacion.MENSAJES.sinParcelas };
+    }
+    if (revision.parcelas.length === 1) {
+      const parcela = revision.parcelas[0];
+      return {
+        texto:
+          `Parcela activa: ${parcela.nombre || parcela.id}` +
+          `${parcela.cultivo ? ` · ${parcela.cultivo}` : ''}.`,
+      };
+    }
+    // Se crea un nonce nuevo al pedir la selección; nunca se manda un
+    // parcela_id manipulable en la callback_data.
+    return {
+      texto: vinculacion.MENSAJES.sinParcelaActiva,
+      teclado: tecladoDeSeleccion(vinculacion.selectorParaChat(chatId, revision.vinculo, revision.parcelas)),
+    };
+  }
+  return { texto: vinculacion.MENSAJES.sinParcelaActiva };
+}
+
+function respuestaSinVinculo(orientacion) {
+  const limpia = vinculacion.sanearRespuesta(orientacion);
+  const partes = [
+    limpia,
+    vinculacion.MENSAJES.sinVinculoAdministrativo,
+    'Para vincular tu cuenta, entra a Mi Campo, genera un código y envíalo así: /vincular CODIGO',
+  ].filter(Boolean);
+  return partes.join('\n\n');
+}
+
+function respuestaAnalisisLocal(orientacion) {
+  const limpia = vinculacion.sanearRespuesta(orientacion);
+  return [limpia, vinculacion.MENSAJES.analizadoLocal].filter(Boolean).join('\n\n');
+}
+
 /** Foto sin pie de foto: se pide una descripción una sola vez. */
 async function pedirDescripcionEnTelegram(chatId, msg) {
   try {
@@ -857,7 +1005,7 @@ async function pedirDescripcionEnTelegram(chatId, msg) {
       'out',
       { auto: true },
     );
-    console.log(`→ [${telegram.tituloChat(msg.chat)}] (se pidió descripción de la foto)`);
+    console.log('→ [Telegram] (se pidió descripción de la foto)');
   } catch (err) {
     console.error(`[telegram] no se pudo pedir la descripción: ${err.message}`);
   }
@@ -897,19 +1045,32 @@ const RESPUESTA_FOTO_SIN_ANALISIS =
  * Guarda la consulta de una fotografía (una sola) y devuelve el texto a enviar.
  * Solo se guardan el análisis estructurado y metadatos: nunca binarios ni URLs.
  */
-function registrarConsultaFoto(chatId, msg, caption, analisis) {
+function registrarConsultaFoto(chatId, msg, caption, analisis, revision = null) {
   const previa = buscarConsultaTelegram(chatId, msg.message_id, msg);
+  const vinculado = Boolean(
+    revision && revision.activo && revision.ok && revision.parcela && revision.vinculo,
+  );
+  const parcela = vinculado ? revision.parcela : null;
   const consulta = {
-    id: previa ? previa.id : idConsultaTelegram(chatId, msg.message_id),
-    chat_id: String(chatId),
+    id: previa ? previa.id : idConsultaDe(chatId, msg.message_id, vinculado),
+    telegram_chat_hash: hashChatSeguro(chatId),
     fuente: 'telegram',
     estado: analisis.estado_analisis === 'error' ? 'error' : 'analizado',
-    productor_id: String(msg.from?.id ?? chatId),
-    productor: telegram.nombreRemitente(msg),
-    parcela_id: null,
-    parcela: null,
-    cultivo: analisis.cultivo_posible || null,
-    localidad: null,
+    estado_local: 'analizado',
+    caso_oficial: false,
+    productor_id: vinculado ? revision.vinculo.productor_id : null,
+    // No se guarda el nombre del productor en el análisis local; la identidad
+    // oficial viaja por productor_id, no por datos personales.
+    productor: null,
+    parcela_id: vinculado ? parcela.id : null,
+    parcela: vinculado ? parcela.nombre || null : null,
+    cultivo: vinculado
+      ? parcela.cultivo || analisis.cultivo_posible || null
+      : analisis.cultivo_posible || null,
+    etapa: vinculado ? parcela.etapa || null : null,
+    superficie_ha: vinculado ? parcela.superficie_ha ?? null : null,
+    localidad: vinculado ? parcela.localidad || null : null,
+    municipio: vinculado ? parcela.municipio || null : null,
     tipo_mensaje: 'foto',
     texto: caption || null,
     caption: caption || null,
@@ -950,6 +1111,9 @@ function registrarConsultaFoto(chatId, msg, caption, analisis) {
         analisis.advertencia || 'Resultado preliminar: no sustituye la revisión de un técnico.',
     },
     registrado: false,
+    folio: null,
+    caso: null,
+    requiere_revision_coordinacion: false,
     error: null,
   };
   store.agregarConsulta(consulta);
@@ -957,48 +1121,81 @@ function registrarConsultaFoto(chatId, msg, caption, analisis) {
   return respuestaDeAnalisis(analisis);
 }
 
+function respuestaFotoConEstado(analisisTexto, revision) {
+  if (revision && revision.activo && revision.ok && revision.parcela && revision.vinculo) {
+    return respuestaAnalisisLocal(analisisTexto);
+  }
+  return respuestaSinVinculo(analisisTexto);
+}
+
 /** Analiza la foto y devuelve el texto de UNA sola respuesta. */
-async function responderFotoConAnalisis(chatId, msg, caption) {
+async function responderFotoConAnalisis(chatId, msg, caption, revision = null) {
+  if (revision && revision.activo && !revision.ok) {
+    return respuestaParcelaPendiente(chatId, revision);
+  }
   let analisis;
   try {
     analisis = await vision.analizarFoto(msg, { caption: caption || null, chatId });
   } catch (err) {
     // Mensaje controlado: el error de vision nunca incluye token, URL ni imagen.
     console.error(`[vision] ${err?.codigo || 'error'}: ${err?.message || 'fallo'}`);
-    registrarConsultaFoto(chatId, msg, caption, {
-      material_vegetal: false,
-      suficiente: false,
-      cultivo_posible: null,
-      plaga_posible: null,
-      senales: [],
-      porcentaje_estimado: null,
-      confianza: 0,
-      necesita_mas: ['descripción escrita del problema'],
-      advertencia: RESPUESTA_FOTO_SIN_ANALISIS,
-      estado_analisis: 'error',
-      modelo: null,
-    });
-    return RESPUESTA_FOTO_SIN_ANALISIS;
+    registrarConsultaFoto(
+      chatId,
+      msg,
+      caption,
+      {
+        material_vegetal: false,
+        suficiente: false,
+        cultivo_posible: null,
+        plaga_posible: null,
+        senales: [],
+        porcentaje_estimado: null,
+        confianza: 0,
+        necesita_mas: ['descripción escrita del problema'],
+        advertencia: RESPUESTA_FOTO_SIN_ANALISIS,
+        estado_analisis: 'error',
+        modelo: null,
+      },
+      revision,
+    );
+    return respuestaFotoConEstado(RESPUESTA_FOTO_SIN_ANALISIS, revision);
   }
-  return registrarConsultaFoto(chatId, msg, caption, analisis);
+  const texto = registrarConsultaFoto(chatId, msg, caption, analisis, revision);
+  return respuestaFotoConEstado(texto, revision);
 }
 
 /** Envía una respuesta por Telegram y la registra como mensaje saliente. */
-async function responderYRecordar(chatId, msg, texto) {
-  const enviado = await telegram.enviarMensaje(chatId, texto);
+async function responderYRecordar(chatId, msg, respuesta) {
+  const texto = typeof respuesta === 'string' ? respuesta : respuesta?.texto;
+  const teclado = typeof respuesta === 'object' && respuesta ? respuesta.teclado : null;
+  const extra = teclado ? { reply_markup: teclado } : {};
+  const enviado = await telegram.enviarMensaje(chatId, texto, extra);
   guardarMensajeTelegram(
     { ...enviado, chat: enviado.chat || msg.chat, from: store.getTelegram().bot },
     'out',
     { auto: true },
   );
-  console.log(`→ [${telegram.tituloChat(msg.chat)}] (automático) ${texto}`);
+  console.log('→ [Telegram] respuesta automática enviada');
   return enviado;
 }
 
-async function responderEnTelegram(chatId, textoUsuario, msg, { esFoto = false } = {}) {
+async function responderEnTelegram(chatId, textoUsuario, msg, { esFoto = false, revision = null } = {}) {
+  if (revision && revision.activo && !revision.ok) {
+    return respuestaParcelaPendiente(chatId, revision);
+  }
+
+  const vinculado = Boolean(
+    revision && revision.activo && revision.ok && revision.parcela && revision.vinculo,
+  );
+  const parcela = vinculado ? revision.parcela : null;
   const contexto = {
-    productor: telegram.nombreRemitente(msg),
+    // No se envía el nombre del remitente al modelo: la identidad oficial no
+    // depende de datos personales y el texto no debe poder repetirlos.
+    productor: 'productor',
     fecha: new Date((msg.date || 0) * 1000).toISOString(),
+    parcela: parcela ? parcela.nombre : null,
+    cultivo: parcela ? parcela.cultivo : null,
+    etapa: parcela ? parcela.etapa : null,
   };
 
   const interpretacion = await agente.interpretar({
@@ -1010,45 +1207,114 @@ async function responderEnTelegram(chatId, textoUsuario, msg, { esFoto = false }
 
   const plaga = interpretacion.es_plaga ? agente.porId(interpretacion.plaga) : null;
   const previa = buscarConsultaTelegram(chatId, msg.message_id, msg);
+  const recibido = new Date((msg.date || Math.floor(Date.now() / 1000)) * 1000).toISOString();
+  const porcentaje = Number.isFinite(Number(interpretacion.porcentaje))
+    ? Number(interpretacion.porcentaje)
+    : 10;
+
+  let calc = null;
+  if (vinculado && plaga) {
+    try {
+      const catalogoParcelas =
+        cache.parcelas instanceof Map && cache.parcelas.size
+          ? cache.parcelas
+          : new Map((revision.parcelas || []).map((p) => [p.id, p]));
+      const propias = brotes.casosPropiosValidos(store.listaConsultas(), catalogoParcelas);
+      let previos = [];
+      try {
+        previos = await brotes.casosPrevios();
+      } catch {
+        previos = [];
+      }
+      calc = await derivados.calcular({
+        idActual: previa ? previa.id : idConsultaDe(chatId, msg.message_id, vinculado),
+        plaga,
+        parcela,
+        porcentaje,
+        recibido,
+        esSeguimiento: interpretacion.es_seguimiento === true,
+        esRespuesta: false,
+        propias,
+        previos,
+      });
+    } catch {
+      // El cálculo es orientativo: si falla el catálogo de técnicos o los
+      // casos previos, se guarda igualmente el análisis local sin inventar
+      // prioridad ni técnico.
+      calc = null;
+    }
+  }
 
   const consulta = {
-    id: previa ? previa.id : idConsultaTelegram(chatId, msg.message_id),
-    chat_id: String(chatId),
+    id: previa ? previa.id : idConsultaDe(chatId, msg.message_id, vinculado),
+    telegram_chat_hash: hashChatSeguro(chatId),
     fuente: 'telegram',
     estado: 'analizado',
-    productor_id: String(msg.from?.id ?? chatId),
-    productor: telegram.nombreRemitente(msg),
-    parcela_id: null,
-    parcela: null,
-    cultivo: null,
-    localidad: null,
+    estado_local: 'analizado',
+    caso_oficial: false,
+    productor_id: vinculado ? revision.vinculo.productor_id : null,
+    // No se guarda el nombre del productor en el análisis local; la identidad
+    // oficial viaja por productor_id, no por datos personales.
+    productor: null,
+    parcela_id: vinculado ? parcela.id : null,
+    parcela: vinculado ? parcela.nombre || null : null,
+    cultivo: vinculado ? parcela.cultivo || null : null,
+    etapa: vinculado ? parcela.etapa || null : null,
+    superficie_ha: vinculado ? parcela.superficie_ha ?? null : null,
+    localidad: vinculado ? parcela.localidad || null : null,
+    municipio: vinculado ? parcela.municipio || null : null,
+    lat: vinculado ? parcela.lat ?? null : null,
+    lon: vinculado ? parcela.lon ?? null : null,
     tipo_mensaje: esFoto ? 'foto' : 'texto',
     texto: textoUsuario,
-    recibido: new Date((msg.date || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+    recibido,
     analizado_en: Date.now(),
     titulo: interpretacion.titulo,
     es_plaga: interpretacion.es_plaga,
     plaga: interpretacion.plaga,
     plaga_nombre: plaga ? plaga.nombre : null,
     severidad: plaga ? plaga.severidad : null,
+    especialidad: plaga ? plaga.especialidad : null,
     cuarentenaria: plaga ? Boolean(plaga.cuarentenaria) : false,
-    porcentaje: interpretacion.porcentaje,
-    prioridad: null,
-    semaforo: null,
-    tecnico_id: null,
-    tecnico_nombre: null,
-    brote: null,
+    porcentaje,
+    prioridad: calc ? calc.prioridad : null,
+    semaforo: calc ? calc.semaforo : null,
+    desglose_prioridad: calc ? calc.desglose : null,
+    tecnico_id: calc && calc.tecnico ? calc.tecnico.id : null,
+    tecnico_nombre: calc && calc.tecnico ? calc.tecnico.nombre : null,
+    tecnico_distancia_km: calc && calc.tecnico ? calc.tecnico.distancia_km : null,
+    brote: calc ? calc.brote : null,
+    brote_cuenta: calc ? calc.broteCuenta : 0,
+    brote_vecinos: calc ? calc.broteVecinos : [],
+    requiere_revision_coordinacion: Boolean(
+      calc && (calc.brote === true || calc.semaforo === 'rojo' || calc.semaforo === 'naranja'),
+    ),
     confianza: interpretacion.confianza,
     razon: interpretacion.razon,
-    respuesta: interpretacion.respuesta,
+    // El texto del modelo se guarda saneado: no puede quedar una afirmación
+    // administrativa en el historial aunque luego se corrija al responder.
+    respuesta: vinculacion.sanearRespuesta(interpretacion.respuesta),
     modelo: interpretacion.modelo || null,
     registrado: false,
+    folio: null,
+    caso: null,
+    resultado: null,
+    aviso_enviado: false,
+    telegram_enviado: false,
+    sanidad_avisada: false,
+    pregunta_enviada: false,
     error: null,
   };
   store.agregarConsulta(consulta);
   store.incrementarMetrica('procesados');
+  if (consulta.semaforo === 'rojo' || consulta.semaforo === 'naranja') {
+    store.incrementarMetrica('urgentes');
+  }
+  if (consulta.brote) store.incrementarMetrica('brotes');
 
-  return interpretacion.respuesta;
+  return vinculado
+    ? respuestaAnalisisLocal(interpretacion.respuesta)
+    : respuestaSinVinculo(interpretacion.respuesta);
 }
 
 /**
@@ -1065,6 +1331,27 @@ async function manejarCallback(cq) {
 
   const responder = (texto) =>
     telegram.responderCallback(cq.id, texto).catch(() => {});
+
+  // Callbacks de vinculación: no pasan por el flujo de aprobaciones.
+  if (accion === 'parcela' || accion === 'desvincular') {
+    try {
+      const resultado = await vinculacion.procesarCallback(chatId, datos);
+      if (!resultado) return responder('Acción no reconocida');
+      if (resultado.texto) {
+        const extra = resultado.teclado ? { reply_markup: resultado.teclado } : {};
+        const enviado = await telegram.enviarMensaje(chatId, resultado.texto, extra);
+        guardarMensajeTelegram(
+          { ...enviado, chat: enviado.chat || cq.message?.chat, from: store.getTelegram().bot },
+          'out',
+          { auto: true },
+        );
+      }
+      return responder(resultado.ok === false ? 'No se pudo completar' : 'Listo');
+    } catch (err) {
+      console.error(`[vinculacion] no se pudo procesar el callback: ${err.message}`);
+      return responder('No se pudo completar');
+    }
+  }
 
   const consulta = reporteId ? store.obtenerConsulta(reporteId) : null;
   if (!consulta) return responder('Ese caso ya no está disponible.');
@@ -1156,6 +1443,11 @@ async function manejarCallback(cq) {
 
 async function manejarUpdate(update) {
   if (update.callback_query) {
+    // Los callbacks también se deduplican de forma persistente: Telegram puede
+    // reenviar el mismo callback después de un reinicio.
+    const claveCallback = `c:${update.callback_query.id}`;
+    if (vinculacion.updateYaProcesado(claveCallback)) return;
+    vinculacion.marcarUpdateProcesado(claveCallback);
     await manejarCallback(update.callback_query);
     return;
   }
@@ -1169,23 +1461,22 @@ async function manejarUpdate(update) {
   const claveUpdate =
     update.update_id !== undefined && update.update_id !== null
       ? `u:${update.update_id}`
-      : `m:${chatIdMsg}:${msg.message_id}`;
+      : `m:${hashChatSeguro(chatIdMsg) || 'sin-huella'}:${msg.message_id}`;
   if (UPDATES_VISTOS.has(claveUpdate)) return;
+  if (vinculacion.updateYaProcesado(claveUpdate)) return;
   UPDATES_VISTOS.add(claveUpdate);
+  vinculacion.marcarUpdateProcesado(claveUpdate);
   if (UPDATES_VISTOS.size > 1000) {
     UPDATES_VISTOS.delete(UPDATES_VISTOS.values().next().value);
   }
 
   const esEdicion = Boolean(update.edited_message || update.edited_channel_post);
   const { chatId, texto, clase } = guardarMensajeTelegram(msg, 'in', { esEdicion });
-  console.log(`← [${telegram.tituloChat(msg.chat)}] ${telegram.nombreRemitente(msg)}: ${texto}`);
+  console.log(`← [Telegram] mensaje recibido (${clase})`);
 
   if (esEdicion || !config.responderTelegram) return;
   if (msg.chat.type !== 'private') return;
   if (String(msg.from?.id) === String(store.getTelegram().bot?.id)) return;
-
-  // Ya atendido (mismo chat y mensaje): no se vuelve a analizar ni a responder.
-  if (buscarConsultaTelegram(chatId, msg.message_id, msg)) return;
 
   // Texto clasificable: el texto normal o, en una foto, su pie de foto.
   const esFoto = clase === 'photo' || Array.isArray(msg.photo);
@@ -1194,9 +1485,31 @@ async function manejarUpdate(update) {
   const textoClasificable = textoNormal || caption;
 
   try {
+    // Los comandos se atienden antes que el agente y no crean consultas.
+    if (textoNormal.startsWith('/')) {
+      const respuesta = await vinculacion.procesarComando(chatId, textoNormal);
+      if (respuesta) {
+        await responderYRecordar(chatId, msg, prepararRespuestaComando(respuesta));
+        return;
+      }
+    }
+
+    // Ya atendido (mismo chat y mensaje): no se vuelve a analizar ni a responder.
+    if (buscarConsultaTelegram(chatId, msg.message_id, msg)) return;
+
+    const revision = await revisionChat(chatId);
+
+    // Sin parcela activa no se analiza ni se guarda como caso ubicado, incluso
+    // si la foto llega sin pie y el análisis visual está deshabilitado.
+    if (revision && revision.activo && !revision.ok) {
+      const respuesta = respuestaParcelaPendiente(chatId, revision);
+      await responderYRecordar(chatId, msg, respuesta);
+      return;
+    }
+
     // Fotografía con análisis visual habilitado: se analiza (con caption si lo hay).
     if (esFoto && config.visionHabilitado) {
-      const respuesta = await responderFotoConAnalisis(chatId, msg, caption);
+      const respuesta = await responderFotoConAnalisis(chatId, msg, caption, revision);
       await responderYRecordar(chatId, msg, respuesta);
       return;
     }
@@ -1207,10 +1520,14 @@ async function manejarUpdate(update) {
       return;
     }
 
-    const respuesta = await responderEnTelegram(chatId, textoClasificable, msg, { esFoto });
+    const respuesta = await responderEnTelegram(chatId, textoClasificable, msg, {
+      esFoto,
+      revision,
+    });
     await responderYRecordar(chatId, msg, respuesta);
   } catch (err) {
-    console.error(`[telegram] no se pudo responder a ${chatId}: ${err.message}`);
+    // Sin chat, texto ni datos del remitente en el registro.
+    console.error(`[telegram] no se pudo responder: ${err.message}`);
   }
 }
 
