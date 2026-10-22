@@ -16,6 +16,7 @@ const agente = require('./src/agente');
 const telegram = require('./src/telegram');
 const gemini = require('./src/gemini');
 const procesador = require('./src/procesador');
+const { etiquetaPlaga, textoEsPlaga } = require('./src/etiquetas-panel');
 
 /* ------------------------------------------------------------------ */
 /* Utilidades HTTP                                                     */
@@ -134,6 +135,15 @@ function resumenConsulta(c) {
     es_plaga: c.es_plaga,
     plaga: c.plaga,
     plaga_nombre: c.plaga_nombre,
+    // Etiqueta lista para pintar (null no se interpreta como "no es plaga").
+    plaga_etiqueta: etiquetaPlaga(c),
+    es_plaga_texto: textoEsPlaga(c),
+    // Análisis visual preliminar (fotos de Telegram)
+    posible_plaga: c.posible_plaga ?? null,
+    posible_cultivo: c.posible_cultivo ?? null,
+    estado_analisis: c.estado_analisis ?? null,
+    proveedor_analisis: c.proveedor_analisis ?? null,
+    caption: c.caption ?? null,
     severidad: c.severidad,
     cuarentenaria: c.cuarentenaria,
     // Nivel 2: lo que el panel necesita para pintar el semáforo y el resto
@@ -169,8 +179,10 @@ function aplicarFiltro(items, url) {
   if (filtro === 'urgentes') salida = salida.filter(esUrgente);
   else if (filtro === 'brotes') salida = salida.filter((c) => c.brote === true);
   else if (filtro === 'cuarentenaria') salida = salida.filter((c) => c.cuarentenaria);
-  else if (filtro === 'plaga') salida = salida.filter((c) => c.es_plaga);
-  else if (filtro === 'otras') salida = salida.filter((c) => !c.es_plaga);
+  else if (filtro === 'plaga') salida = salida.filter((c) => c.es_plaga === true);
+  // "No son plaga" solo para casos confirmados como no-plaga; las fotos con
+  // resultado preliminar (es_plaga === null) no se cuentan aquí.
+  else if (filtro === 'otras') salida = salida.filter((c) => c.es_plaga === false);
   else if (filtro === 'seguimientos') salida = salida.filter((c) => c.es_seguimiento);
   else if (filtro === 'escalados') salida = salida.filter((c) => c.escalado);
   else if (filtro === 'pendientes') salida = salida.filter((c) => c.aprobacion_estado === 'pendiente');
@@ -180,7 +192,10 @@ function aplicarFiltro(items, url) {
 
   if (q) {
     salida = salida.filter((c) =>
-      [c.id, c.titulo, c.productor, c.productor_id, c.plaga, c.plaga_nombre, c.texto, c.localidad]
+      [
+        c.id, c.titulo, c.productor, c.productor_id, c.plaga, c.plaga_nombre,
+        c.texto, c.localidad, c.posible_plaga, c.posible_cultivo, c.caption,
+      ]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q)),
     );
