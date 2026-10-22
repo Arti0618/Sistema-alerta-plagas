@@ -420,9 +420,8 @@ const MAPA = {
   // forma de la zona (ver renderMapa).
   margen: 46,
   kmPorGrado: 111.32,
-  // Servidor de teselas del mapa base. Es el mapa libre de OpenStreetMap:
-  // no necesita clave ni registro.
-  teselas: 'https://tile.openstreetmap.org',
+  // La URL del proveedor de teselas vive en public/mapa-teselas.js y se
+  // configura en el servidor (MAP_TILE_*). Aquí no se duplica.
 };
 
 const COLOR_SEMAFORO = {
@@ -567,10 +566,13 @@ function teselasDelMapa(proj, vista, anchoPx) {
   for (let tx = t0x; tx <= t1x; tx++) {
     for (let ty = t0y; ty <= t1y; ty++) {
       lista.push({
-        url: `${MAPA.teselas}/${z}/${tx}/${ty}.png`,
-        x: proj.offsetX + (tx / n - proj.minX) * proj.escala,
-        y: proj.offsetY + (ty / n - proj.minY) * proj.escala,
-        lado,
+        z,
+        x: tx,
+        y: ty,
+        x0: proj.offsetX + (tx / n - proj.minX) * proj.escala,
+        y0: proj.offsetY + (ty / n - proj.minY) * proj.escala,
+        w: lado,
+        h: lado,
       });
     }
   }
@@ -735,10 +737,27 @@ function ocultarTip() {
   els.mapaTip.hidden = true;
 }
 
+let capaFondoMapa = null;
+let rectFondoMapa = null;
+let capaTeselasMapa = null;
+
+/** Mantiene visible la atribución del proveedor de teselas activo. */
+function actualizarAtribucionMapa(info) {
+  const el = document.querySelector('[data-atribucion-mapa]');
+  if (el) el.textContent = info.atribucion;
+  if (els.mapa) els.mapa.setAttribute('data-teselas-estado', info.estado);
+}
+
 function renderMapa() {
   const svg = els.mapa;
   const datos = S.mapa;
-  svg.textContent = '';
+
+  // El fondo y la capa de teselas se conservan entre redibujos: así no se
+  // vuelven a insertar ni a solicitar las mismas imágenes.
+  for (const hijo of [...svg.children]) {
+    if (hijo === capaFondoMapa || (capaTeselasMapa && hijo === capaTeselasMapa.g)) continue;
+    hijo.remove();
+  }
 
   if (!datos) return;
 
@@ -785,10 +804,25 @@ function renderMapa() {
 
   const radio5km = MapaEscala.radioGeografico(5, proj.kmPorPixel);
 
-  // Fondo del mapa base (teselas de OpenStreetMap). Si no hay internet, las
-  // imágenes simplemente no cargan y el resto del mapa sigue funcionando.
-  const fondo = svgEl('rect', { x: 0, y: 0, width: ancho, height: alto, fill: '#0e1621' });
-  svg.append(fondo);
+  // Fondo persistente + capa de teselas compartida. No se recrean en cada
+  // redibujo: la caché del módulo reutiliza las imágenes ya cargadas.
+  if (!capaFondoMapa) {
+    capaFondoMapa = svgEl('g', { 'data-capa': 'fondo' });
+    rectFondoMapa = svgEl('rect', { x: 0, y: 0, width: ancho, height: alto, fill: '#0e1621' });
+    capaFondoMapa.append(rectFondoMapa);
+    svg.append(capaFondoMapa);
+    capaTeselasMapa = new MapaTeseslas.Capa(svg, { onEstado: actualizarAtribucionMapa });
+  } else {
+    rectFondoMapa.setAttribute('width', ancho);
+    rectFondoMapa.setAttribute('height', alto);
+    svg.append(capaFondoMapa);
+  }
+  if (capaTeselasMapa) {
+    svg.append(capaTeselasMapa.g);
+    if (capaTeselasMapa.visible !== els.capaBase.checked) {
+      capaTeselasMapa.setVisible(els.capaBase.checked);
+    }
+  }
 
   const vista = vistaActual();
 
@@ -804,22 +838,10 @@ function renderMapa() {
   svg.setAttribute('data-zoom', zoomMapa.toFixed(2));
   const u = (px) => MapaEscala.aUnidades(px, vista.w, anchoPx || 1000);
   const pxPorUnidad = (anchoPx || 1000) / vista.w;
-  if (els.capaBase.checked) {
-    const g = svgEl('g');
-    for (const t of teselasDelMapa(proj, vista, marco.clientWidth || 1000)) {
-      const img = svgEl('image', {
-        href: t.url,
-        x: t.x,
-        y: t.y,
-        width: t.lado,
-        height: t.lado,
-        preserveAspectRatio: 'none',
-      });
-      img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', t.url);
-      img.setAttribute('opacity', '0.85');
-      g.append(img);
-    }
-    svg.append(g);
+  if (capaTeselasMapa) {
+    capaTeselasMapa.actualizar(
+      teselasDelMapa(proj, vista, marco.clientWidth || 1000),
+    );
   }
 
   // Rejilla cada 2 km

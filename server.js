@@ -483,12 +483,11 @@ async function getDiagnostico(res) {
 function cabecerasSeguridad(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'no-referrer');
+  // Se envía solo el origen a hosts externos (nunca la ruta completa) y las
+  // teselas reciben un Referer válido, como exige su política de uso.
+  res.setHeader('Referrer-Policy', config.referrerPolicy);
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
-  res.setHeader(
-    'Content-Security-Policy',
-    "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://server.arcgisonline.com https://*.arcgisonline.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
-  );
+  res.setHeader('Content-Security-Policy', config.csp);
 }
 
 const servidor = http.createServer(async (req, res) => {

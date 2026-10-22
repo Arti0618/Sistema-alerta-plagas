@@ -42,8 +42,8 @@ function pagina(res, archivo) {
       'Content-Type': 'text/html; charset=utf-8',
       'Content-Length': buf.length,
       'Cache-Control': 'no-store',
-      'Content-Security-Policy':
-        "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://server.arcgisonline.com https://*.arcgisonline.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+      'Referrer-Policy': config.referrerPolicy,
+      'Content-Security-Policy': config.csp,
     });
     res.end(buf);
   });
@@ -600,6 +600,16 @@ async function manejar(req, res, url) {
     }
     return enviarJson(res, 200, cuerpo), true;
   }
+  if (p === '/api/portal/mapa-config' && req.method === 'GET') {
+    return enviarJson(res, 200, {
+      proveedor: config.mapTileProvider,
+      url: config.mapTileUrl,
+      atribucion: config.mapTileAttribution,
+      url_respaldo: config.mapTileFallbackUrl,
+      atribucion_respaldo: config.mapTileFallbackAttribution,
+      zoom_max: config.mapTileMaxZoom,
+    }), true;
+  }
   if (p === '/api/portal/resumen' && req.method === 'GET') {
     const cat = await datos.catalogos();
     return enviarJson(res, 200, {
@@ -630,8 +640,9 @@ function apiHeredadaProtegida(req, res, p) {
   if (!p.startsWith('/api/')) return false;
   if (p.startsWith('/api/productor/') || p.startsWith('/api/coordinacion/')) return false;
   if (p === '/api/sesion' || p === '/api/logout' || p === '/api/productor/login' || p === '/api/coordinacion/login') return false;
-  // Métricas públicas de la portada (sin datos internos).
-  if (p === '/api/portal/resumen') return false;
+  // Métricas públicas de la portada (sin datos internos) y configuración
+  // pública de teselas (sin secretos).
+  if (p === '/api/portal/resumen' || p === '/api/portal/mapa-config') return false;
   const s = portal.sesionDe(req);
   const codigo = portal.codigoAutorizacion(s, ['coordinador', 'tecnico']);
   if (codigo) {

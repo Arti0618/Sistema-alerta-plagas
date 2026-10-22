@@ -109,6 +109,22 @@ const config = {
   portalCoordinadorPassword: String(process.env.PORTAL_COORDINADOR_PASSWORD || ''),
   portalEnviarCasoOficial: bandera('PORTAL_WEB_ENVIAR_CASO_OFICIAL', false),
 
+  // Teselas del mapa base (compartidas por Mi Campo y el Panel).
+  // El proveedor principal usa la URL oficial de OpenStreetMap; el respaldo
+  // solo se activa una vez si el principal falla.
+  mapTileProvider: si('MAP_TILE_PROVIDER', 'openstreetmap'),
+  mapTileUrl: si('MAP_TILE_URL', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+  mapTileAttribution: si('MAP_TILE_ATTRIBUTION', '© OpenStreetMap contributors'),
+  mapTileFallbackUrl: si(
+    'MAP_TILE_FALLBACK_URL',
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+  ),
+  mapTileFallbackAttribution: si(
+    'MAP_TILE_FALLBACK_ATTRIBUTION',
+    'Esri, HERE, Garmin, © OpenStreetMap contributors',
+  ),
+  mapTileMaxZoom: Number(si('MAP_TILE_MAX_ZOOM', 19)),
+
   // Rutas
   dataDir: path.join(ROOT, 'data'),
   publicDir: path.join(ROOT, 'public'),
@@ -157,5 +173,38 @@ config.openrouterModelos = [
       .filter(Boolean),
   ),
 ];
+
+/**
+ * Hosts exactos de teselas para la CSP. Nunca se usan comodines: solo los
+ * dominios realmente configurados (principal y respaldo).
+ */
+function hostTesela(plantilla) {
+  try {
+    const limpia = String(plantilla || '').replace(/\{[^}]+\}/g, '0');
+    const u = new URL(limpia);
+    return u.protocol === 'https:' ? u.hostname : '';
+  } catch {
+    return '';
+  }
+}
+config.teselaHosts = [
+  ...new Set(
+    [config.mapTileUrl, config.mapTileFallbackUrl]
+      .map(hostTesela)
+      .filter(Boolean),
+  ),
+];
+const imgTeselas = config.teselaHosts.map((h) => `https://${h}`).join(' ');
+config.referrerPolicy = 'strict-origin-when-cross-origin';
+config.csp = [
+  "default-src 'self'",
+  `img-src 'self' data: blob:${imgTeselas ? ` ${imgTeselas}` : ''}`,
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self'",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
 
 module.exports = config;

@@ -26,7 +26,7 @@
     fotoUrl: null,
     mapa: {
       svg: null,
-      gTiles: null,
+      capaTeselas: null,
       gMarc: null,
       base: null,
       vista: null,
@@ -207,6 +207,37 @@
 
   /* ---------------------------------- mapa ---------------------------------- */
 
+  function actualizarAtribucionTeselas(info) {
+    const el = document.querySelector('[data-atribucion-mapa]');
+    if (el) el.textContent = info.atribucion;
+    if (estado.mapa.svg) {
+      estado.mapa.svg.setAttribute('data-teselas-estado', info.estado);
+    }
+  }
+
+  function actualizarTeselas() {
+    const capa = estado.mapa.capaTeselas;
+    const v = estado.mapa.vista;
+    if (!capa || !v) return;
+    const margen = M.TILE * 0.5;
+    const caja = {
+      x: v.x - margen,
+      y: v.y - margen,
+      w: v.w + margen * 2,
+      h: v.h + margen * 2,
+    };
+    const tiles = M.teselas(caja).map((t) => ({
+      z: t.z,
+      x: t.x,
+      y: t.y,
+      x0: t.x * M.TILE,
+      y0: t.y * M.TILE,
+      w: M.TILE,
+      h: M.TILE,
+    }));
+    capa.actualizar(tiles);
+  }
+
   function crearMapa() {
     const svg = $('mapa');
     estado.mapa.svg = svg;
@@ -220,10 +251,15 @@
     $('mapaVacio').hidden = true;
     svg.textContent = '';
 
-    const gTiles = crear('g', 'capas-teselas');
+    if (!estado.mapa.capaTeselas) {
+      estado.mapa.capaTeselas = new MapaTeseslas.Capa(svg, {
+        onEstado: actualizarAtribucionTeselas,
+      });
+    } else {
+      svg.appendChild(estado.mapa.capaTeselas.g);
+    }
     const gMarc = crear('g', 'capas-marcadores');
-    svg.append(gTiles, gMarc);
-    estado.mapa.gTiles = gTiles;
+    svg.append(gMarc);
     estado.mapa.gMarc = gMarc;
 
     const puntos = estado.parcelas
@@ -242,28 +278,6 @@
     }
     estado.mapa.base = base;
     estado.mapa.vista = { ...base };
-
-    const cobertura = {
-      x: base.x - base.w * 0.35,
-      y: base.y - base.h * 0.35,
-      w: base.w * 1.7,
-      h: base.h * 1.7,
-    };
-    for (const t of M.teselas(cobertura)) {
-      const img = crear('image', 'tesela');
-      img.setAttribute('href', `https://tile.openstreetmap.org/${t.z}/${t.x}/${t.y}.png`);
-      img.setAttribute('x', String(t.x * M.TILE));
-      img.setAttribute('y', String(t.y * M.TILE));
-      img.setAttribute('width', String(M.TILE));
-      img.setAttribute('height', String(M.TILE));
-      gTiles.appendChild(img);
-    }
-    const velo = crear('rect', 'velo');
-    velo.setAttribute('x', String(base.x - base.w));
-    velo.setAttribute('y', String(base.y - base.h));
-    velo.setAttribute('width', String(base.w * 3));
-    velo.setAttribute('height', String(base.h * 3));
-    gTiles.appendChild(velo);
 
     aplicarVista();
   }
@@ -286,6 +300,7 @@
     svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
     $('zoomMas').disabled = v.w <= b.w / 12;
     $('zoomMenos').disabled = v.w >= b.w * 2.6;
+    actualizarTeselas();
     renderizarMarcadores();
   }
 

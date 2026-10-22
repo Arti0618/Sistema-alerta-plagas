@@ -19,6 +19,15 @@ const config = {
   portalEnviarCasoOficial: false,
   visionHabilitado: false,
   publicDir: path.join(RAIZ, 'public'),
+  mapTileProvider: 'openstreetmap',
+  mapTileUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  mapTileAttribution: '© OpenStreetMap contributors',
+  mapTileFallbackUrl:
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+  mapTileFallbackAttribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors',
+  mapTileMaxZoom: 19,
+  referrerPolicy: 'strict-origin-when-cross-origin',
+  csp: "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org https://server.arcgisonline.com",
 };
 
 const consultas = [
@@ -300,6 +309,18 @@ test('el mapa privado solo trae datos propios y alertas anónimas', async () => 
   );
   assert.ok(!('lat' in alerta) && !('lon' in alerta) && !('productor_id' in alerta));
   assert.strictEqual(alerta.parcela_ref, 'P-1');
+});
+
+test('la configuración de teselas es pública, oficial y sin secretos', async () => {
+  const res = await peticion({ destino: '/api/portal/mapa-config' });
+  assert.strictEqual(res.statusCode, 200);
+  const d = json(res);
+  assert.strictEqual(d.url, 'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
+  assert.match(d.atribucion, /OpenStreetMap/);
+  assert.ok(d.url_respaldo.startsWith('https://'));
+  assert.ok(!/openstreetmap\.org/i.test(d.url_respaldo));
+  assert.strictEqual(d.zoom_max, 19);
+  assert.ok(!/password|token|secret|key/i.test(res.body));
 });
 
 test('el mapa privado exige sesión de productor', async () => {

@@ -364,6 +364,12 @@ th { color: var(--apagado); font-weight: 600; font-size: 12.5px; text-transform:
 .punto--visita { background: #4a9fe0; border-radius: 2px; }
 .punto--alerta { background: transparent; border: 2px dashed #a7b4c1; }
 .punto--radio { background: transparent; border: 2px dashed #8fe8ff; }
+.mapa-atribucion {
+  position: absolute; left: 10px; top: 10px; z-index: 4;
+  max-width: calc(100% - 20px); padding: 2px 7px; border-radius: 7px;
+  background: rgba(11, 17, 23, .82); border: 1px solid var(--linea);
+  color: var(--apagado); font-size: 10.5px; pointer-events: none;
+}
 .mapa-vacio {
   position: absolute; inset: 0; display: grid; place-content: center; text-align: center;
   gap: 4px; color: var(--apagado); background: rgba(10, 20, 28, .92); padding: 20px;
