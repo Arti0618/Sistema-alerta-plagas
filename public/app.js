@@ -636,6 +636,16 @@ function zoomCentro(factor) {
   zoomEn(marco.left + marco.width / 2, marco.top + marco.height / 2, factor);
 }
 
+/** Acerca el mapa manteniendo centrado un punto del lienzo (para los grupos). */
+function zoomEnPunto(x, y, factor) {
+  const svg = els.mapa;
+  const punto = svg.createSVGPoint();
+  punto.x = x;
+  punto.y = y;
+  const cliente = punto.matrixTransform(svg.getScreenCTM());
+  zoomEn(cliente.x, cliente.y, factor);
+}
+
 let arrastre = null;
 
 els.mapa.addEventListener(
@@ -752,7 +762,7 @@ function renderMapa() {
 
   if (!proj) return;
 
-  const radio5km = 5 / proj.kmPorPixel;
+  const radio5km = MapaEscala.radioGeografico(5, proj.kmPorPixel);
 
   // Fondo del mapa base (teselas de OpenStreetMap). Si no hay internet, las
   // imágenes simplemente no cargan y el resto del mapa sigue funcionando.
@@ -760,6 +770,19 @@ function renderMapa() {
   svg.append(fondo);
 
   const vista = vistaActual();
+
+  // Escalado visual de marcadores: se recalcula en cada dibujo a partir del
+  // zoom actual (nunca se acumula) y se convierte a unidades del lienzo para
+  // que el tamaño en pantalla sea el deseado.
+  const zoomMapa = MapaEscala.zoomEfectivo({
+    anchoPx: anchoPx || 1000,
+    vistaAncho: vista.w,
+    escalaBase: proj.escala,
+  });
+  const med = MapaEscala.medidas(zoomMapa);
+  svg.setAttribute('data-zoom', zoomMapa.toFixed(2));
+  const u = (px) => MapaEscala.aUnidades(px, vista.w, anchoPx || 1000);
+  const pxPorUnidad = (anchoPx || 1000) / vista.w;
   if (els.capaBase.checked) {
     const g = svgEl('g');
     for (const t of teselasDelMapa(proj, vista, marco.clientWidth || 1000)) {
@@ -803,7 +826,9 @@ function renderMapa() {
   esc.append(etiqueta);
   svg.append(esc);
 
-  // Brotes: círculo de 5 km
+  // Brotes: el radio de 5 km es geográfico (en unidades del lienzo, que
+  // equivalen a metros reales). Además se dibuja un anillo visual pequeño que
+  // se reduce con el zoom para no tapar el mapa.
   if (els.capaBrotes.checked) {
     const g = svgEl('g');
     for (const c of datos.casos.filter((x) => x.brote)) {
@@ -813,17 +838,32 @@ function renderMapa() {
           cx: p.x,
           cy: p.y,
           r: radio5km,
+          'data-tipo': 'brote-5km',
           fill: 'rgba(224,85,79,0.16)',
           stroke: '#ff6b6b',
-          'stroke-width': 2,
-          'stroke-dasharray': '6 4',
+          'stroke-width': u(1.5),
+          'stroke-dasharray': `${u(6)} ${u(4)}`,
+          'pointer-events': 'none',
+        }),
+      );
+      g.append(
+        svgEl('circle', {
+          cx: p.x,
+          cy: p.y,
+          r: u(med.anilloBrote) / 2,
+          'data-tipo': 'brote-anillo',
+          fill: 'none',
+          stroke: '#ff6b6b',
+          'stroke-width': u(2),
+          'stroke-dasharray': `${u(3)} ${u(2)}`,
+          'pointer-events': 'none',
         }),
       );
     }
     svg.append(g);
   }
 
-  // Radio de 5 km en cada caso (opcional)
+  // Radio de 5 km en cada caso (opcional). Geográfico: r = radio5km.
   if (els.capaRadio.checked) {
     const g = svgEl('g', { opacity: '0.55' });
     for (const c of datos.casos) {
@@ -833,85 +873,188 @@ function renderMapa() {
           cx: p.x,
           cy: p.y,
           r: radio5km,
+          'data-tipo': 'radio-5km',
           fill: 'none',
           stroke: COLOR_SEMAFORO[c.semaforo] || '#6b7c8d',
-          'stroke-width': 1.2,
-          'stroke-dasharray': '3 3',
+          'stroke-width': u(1.2),
+          'stroke-dasharray': `${u(3)} ${u(3)}`,
+          'pointer-events': 'none',
         }),
       );
     }
     svg.append(g);
   }
 
-  // Casos
-  if (els.capaCasos.checked) {
-    const g = svgEl('g');
-    for (const c of datos.casos) {
-      const p = proj.aPixel(c.lat, c.lon);
-      const color = COLOR_SEMAFORO[c.semaforo] || '#6b7c8d';
-      const r = 5 + Math.round((c.prioridad || 0) / 25);
+  // Casos: círculos escalados por zoom, con área clicable mínima de 24 px.
+  const dibujarCaso = (c, p) => {
+    const prioridad = Math.min(1, Math.max(0, (c.prioridad || 0) / 100));
+    // La prioridad modula el tama?o, pero nunca por debajo del m?nimo visible.
+    const tam = Math.min(28, Math.max(12, med.caso * (0.75 + 0.25 * prioridad)));
+    const color = COLOR_SEMAFORO[c.semaforo] || '#6b7c8d';
+    const r = u(tam) / 2;
 
-      const circulo = svgEl('circle', {
+    const detalle = [
+      `<b>${c.id}</b> · ${c.plaga_nombre || 'sin plaga'}`,
+      `Semáforo: <b>${c.semaforo || '—'}</b>${c.prioridad != null ? ` (prioridad ${c.prioridad})` : ''}`,
+      `Productor: ${c.productor || '—'}`,
+      `Parcela: ${c.parcela || '—'}${c.cultivo ? ` · ${c.cultivo}` : ''}`,
+      `Técnico: ${c.tecnico_nombre || 'sin asignar'}`,
+      c.brote ? '<b>⚠️ Brote</b>' : '',
+    ]
+      .filter(Boolean)
+      .join('<br>');
+
+    const grupo = svgEl('g');
+    grupo.append(
+      svgEl('circle', {
         cx: p.x,
         cy: p.y,
         r,
+        'data-tipo': 'caso',
         fill: color,
         'fill-opacity': c.brote ? '0.95' : '0.75',
         stroke: c.brote ? '#fff' : 'rgba(0,0,0,0.35)',
-        'stroke-width': c.brote ? 2 : 1,
-        cursor: 'pointer',
-      });
+        'stroke-width': u(c.brote ? 2 : 1),
+        'pointer-events': 'none',
+      }),
+    );
 
-      const detalle = [
-        `<b>${c.id}</b> · ${c.plaga_nombre || 'sin plaga'}`,
-        `Semáforo: <b>${c.semaforo || '—'}</b>${c.prioridad != null ? ` (prioridad ${c.prioridad})` : ''}`,
-        `Productor: ${c.productor || '—'}`,
-        `Parcela: ${c.parcela || '—'}${c.cultivo ? ` · ${c.cultivo}` : ''}`,
-        `Técnico: ${c.tecnico_nombre || 'sin asignar'}`,
-        c.brote ? '<b>⚠️ Brote</b>' : '',
-      ]
-        .filter(Boolean)
-        .join('<br>');
+    const hit = svgEl('circle', {
+      cx: p.x,
+      cy: p.y,
+      r: Math.max(r, u(MapaEscala.hitboxPara(tam)) / 2),
+      'data-tipo': 'hit',
+      fill: 'transparent',
+      'pointer-events': 'all',
+      cursor: 'pointer',
+    });
+    hit.addEventListener('mouseenter', (e) => mostrarTip(e, detalle));
+    hit.addEventListener('mousemove', (e) => mostrarTip(e, detalle));
+    hit.addEventListener('mouseleave', ocultarTip);
+    hit.addEventListener('click', () => abrirDetalle(c.id));
+    grupo.append(hit);
+    return grupo;
+  };
 
-      circulo.addEventListener('mouseenter', (e) => mostrarTip(e, detalle));
-      circulo.addEventListener('mousemove', (e) => mostrarTip(e, detalle));
-      circulo.addEventListener('mouseleave', ocultarTip);
-      circulo.addEventListener('click', () => abrirDetalle(c.id));
+  const dibujarGrupo = (gr, cuantos, color) => {
+    const cx = vista.x + gr.x / pxPorUnidad;
+    const cy = vista.y + gr.y / pxPorUnidad;
+    const r = u(Math.max(24, med.caso)) / 2;
+    const grupo = svgEl('g');
+    const circulo = svgEl('circle', {
+      cx,
+      cy,
+      r,
+      'data-tipo': 'grupo',
+      fill: color,
+      'fill-opacity': '0.85',
+      stroke: '#0d1520',
+      'stroke-width': u(2),
+      cursor: 'pointer',
+    });
+    const texto = svgEl('text', {
+      x: cx,
+      y: cy + u(4),
+      'data-tipo': 'grupo-texto',
+      'text-anchor': 'middle',
+      'font-size': u(12),
+      'font-weight': '700',
+      fill: '#0d1520',
+      'pointer-events': 'none',
+    });
+    texto.textContent = String(cuantos);
+    circulo.addEventListener('click', () => zoomEnPunto(cx, cy, 2));
+    grupo.append(circulo, texto);
+    return grupo;
+  };
 
-      g.append(circulo);
+  if (els.capaCasos.checked) {
+    const g = svgEl('g');
+    const puntos = datos.casos.map((c) => ({ c, p: proj.aPixel(c.lat, c.lon) }));
+
+    if (zoomMapa < 12.5) {
+      const pantalla = puntos.map((x) => ({
+        x: (x.p.x - vista.x) * pxPorUnidad,
+        y: (x.p.y - vista.y) * pxPorUnidad,
+      }));
+      for (const gr of MapaEscala.agrupar(pantalla, 34)) {
+        if (gr.items.length === 1) {
+          const { c, p } = puntos[gr.items[0]];
+          g.append(dibujarCaso(c, p));
+        } else {
+          g.append(dibujarGrupo(gr, gr.items.length, 'rgba(111,168,220,0.9)'));
+        }
+      }
+    } else {
+      for (const { c, p } of puntos) g.append(dibujarCaso(c, p));
     }
     svg.append(g);
   }
 
-  // Técnicos
-  if (els.capaTecnicos.checked) {
-    const g = svgEl('g');
-    for (const t of datos.tecnicos || []) {
-      if (t.lat == null || t.lon == null) continue;
-      const p = proj.aPixel(t.lat, t.lon);
+  // Técnicos: rombos escalados por zoom, con área clicable mínima.
+  const dibujarTecnico = (t, p) => {
+    const lado = u(med.tecnico);
 
-      const rombo = svgEl('rect', {
-        x: p.x - 6,
-        y: p.y - 6,
-        width: 12,
-        height: 12,
+    const detalle = [
+      `<b>${t.nombre}</b> (${t.id})`,
+      `Especialidad: ${t.especialidad === 'fitopatologia' ? 'fitopatología' : 'entomología'}`,
+      `Base: ${t.base || '—'}`,
+      `Carga: <b>${t.carga ?? 0}</b> / ${t.tope ?? 5}`,
+    ].join('<br>');
+
+    const grupo = svgEl('g');
+    grupo.append(
+      svgEl('rect', {
+        x: p.x - lado / 2,
+        y: p.y - lado / 2,
+        width: lado,
+        height: lado,
         transform: `rotate(45 ${p.x} ${p.y})`,
         fill: '#6fa8dc',
+        'data-tipo': 'tecnico',
         stroke: '#0d1520',
-        'stroke-width': 1.5,
-      });
+        'stroke-width': u(med.bordeTecnico),
+        'pointer-events': 'none',
+      }),
+    );
 
-      const detalle = [
-        `<b>${t.nombre}</b> (${t.id})`,
-        `Especialidad: ${t.especialidad === 'fitopatologia' ? 'fitopatología' : 'entomología'}`,
-        `Base: ${t.base || '—'}`,
-        `Carga: <b>${t.carga ?? 0}</b> / ${t.tope ?? 5}`,
-      ].join('<br>');
+    const hit = svgEl('circle', {
+      cx: p.x,
+      cy: p.y,
+      r: Math.max(lado / 2, u(MapaEscala.hitboxPara(med.tecnico)) / 2),
+      'data-tipo': 'hit',
+      fill: 'transparent',
+      'pointer-events': 'all',
+      cursor: 'pointer',
+    });
+    hit.addEventListener('mouseenter', (e) => mostrarTip(e, detalle));
+    hit.addEventListener('mousemove', (e) => mostrarTip(e, detalle));
+    hit.addEventListener('mouseleave', ocultarTip);
+    grupo.append(hit);
+    return grupo;
+  };
 
-      rombo.addEventListener('mouseenter', (e) => mostrarTip(e, detalle));
-      rombo.addEventListener('mousemove', (e) => mostrarTip(e, detalle));
-      rombo.addEventListener('mouseleave', ocultarTip);
-      g.append(rombo);
+  if (els.capaTecnicos.checked) {
+    const g = svgEl('g');
+    const puntos = (datos.tecnicos || [])
+      .filter((t) => t.lat != null && t.lon != null)
+      .map((t) => ({ t, p: proj.aPixel(t.lat, t.lon) }));
+
+    if (zoomMapa < 12.5) {
+      const pantalla = puntos.map((x) => ({
+        x: (x.p.x - vista.x) * pxPorUnidad,
+        y: (x.p.y - vista.y) * pxPorUnidad,
+      }));
+      for (const gr of MapaEscala.agrupar(pantalla, 34)) {
+        if (gr.items.length === 1) {
+          const { t, p } = puntos[gr.items[0]];
+          g.append(dibujarTecnico(t, p));
+        } else {
+          g.append(dibujarGrupo(gr, gr.items.length, 'rgba(111,168,220,0.9)'));
+        }
+      }
+    } else {
+      for (const { t, p } of puntos) g.append(dibujarTecnico(t, p));
     }
     svg.append(g);
   }
