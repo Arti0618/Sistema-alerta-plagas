@@ -678,7 +678,13 @@ async function revisarReportes({ forzar = false } = {}) {
     const reportes = await api.reportes(desde, 500);
     cache.ultimaRevision = Date.now();
 
-    const nuevos = (reportes || []).filter((r) => r && r.id && !store.yaProcesado(r.id));
+    const nuevos = (reportes || [])
+      .filter((r) => r && r.id && !store.yaProcesado(r.id))
+      .sort((a, b) => {
+        const ta = new Date(a.recibido).getTime();
+        const tb = new Date(b.recibido).getTime();
+        return (Number.isFinite(ta) ? ta : 0) - (Number.isFinite(tb) ? tb : 0);
+      });
     resumen.nuevos = nuevos.length;
     if (nuevos.length) console.log(`[reportes] ${nuevos.length} mensaje(s) nuevo(s) desde ${desde}`);
 

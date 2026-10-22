@@ -33,6 +33,18 @@ function normalizarSeveridad(severidad) {
 }
 
 /**
+ * Porcentaje afectado. Si el productor no dijo nada (null/undefined/cadena
+ * vacía) la regla manda usar 10; convertir null con Number() daría 0 y
+ * anularía los puntos de superficie.
+ */
+function normalizarPorcentaje(porcentaje) {
+  if (porcentaje === null || porcentaje === undefined) return 10;
+  if (typeof porcentaje === 'string' && porcentaje.trim() === '') return 10;
+  const n = Number(porcentaje);
+  return Number.isFinite(n) ? n : 10;
+}
+
+/**
  * Prioridad de 0 a 100.
  * @param {object} plaga    entrada del catálogo (GET /plagas)
  * @param {object} parcela  parcela (GET /parcelas): cultivo, etapa, superficie_ha
@@ -50,7 +62,7 @@ function calcularPrioridad(plaga, parcela, porcentaje) {
 
   // 2) Superficie (hasta 25): 25 puntos desde 4 ha afectadas
   const superficieHa = Number(parcela?.superficie_ha);
-  const pct = Number.isFinite(Number(porcentaje)) ? Number(porcentaje) : 10;
+  const pct = normalizarPorcentaje(porcentaje);
   let puntosSuperficie = 0;
   if (Number.isFinite(superficieHa) && superficieHa > 0) {
     const haAfectadas = (superficieHa * pct) / 100;
@@ -92,7 +104,7 @@ function desglosePrioridad(plaga, parcela, porcentaje) {
 
   const puntosSeveridad = PUNTOS_SEVERIDAD[normalizarSeveridad(plaga.severidad)];
   const superficieHa = Number(parcela?.superficie_ha) || 0;
-  const pct = Number.isFinite(Number(porcentaje)) ? Number(porcentaje) : 10;
+  const pct = normalizarPorcentaje(porcentaje);
   const puntosSuperficie = Math.min(25, redondear(((superficieHa * pct) / 100 / 4) * 25));
 
   const cultivo = parcela?.cultivo;
