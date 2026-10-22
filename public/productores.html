@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Productores · Panel de Coordinación</title>
+  <link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+  <a class="saltar" href="#principal">Saltar al contenido</a>
+
+  <header class="barra">
+    <div class="contenedor barra__in">
+      <a class="marca" href="/">
+        <span class="marca__icono" aria-hidden="true">🛰️</span>
+        <span>
+          <span class="marca__titulo">Panel de Coordinación</span>
+          <span class="marca__sub">Alerta Plaga · Los Artilleros</span>
+        </span>
+      </a>
+      <nav class="barra__nav" aria-label="Navegación">
+        <a class="enlace" href="/coordinacion">Panel</a>
+        <a class="enlace" href="/coordinacion/productores" aria-current="page">Productores</a>
+        <a class="enlace" href="/coordinacion/bitacora">Bitácora</a>
+        <button class="btn btn--fantasma" type="button" id="btnSalir">Cerrar sesión</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="principal" class="contenedor" style="padding-bottom:40px">
+    <h1 style="font-size:22px;margin:22px 0 6px">Productores</h1>
+    <p class="ayuda" style="margin:0 0 16px">
+      Consulta, filtra y abre el expediente de cada productor. Solo el rol de coordinación puede exportar.
+    </p>
+
+    <section class="tarjeta" aria-labelledby="tituloFiltros">
+      <h2 id="tituloFiltros" style="font-size:16px">Filtros combinables</h2>
+      <form id="formFiltros" class="filtros" novalidate>
+        <div class="campo">
+          <label for="q">Búsqueda general</label>
+          <input id="q" name="q" type="search" placeholder="ID, nombre, parcela, folio, cultivo…" autocomplete="off">
+        </div>
+        <div class="campo">
+          <label for="filtro">Situación</label>
+          <select id="filtro" name="filtro">
+            <option value="todos">Todos los productores</option>
+            <option value="abiertos">Con casos abiertos</option>
+            <option value="sin_casos">Sin casos</option>
+            <option value="urgentes">Con urgencias</option>
+            <option value="brote">Con brote</option>
+            <option value="visita_pendiente">Con visita pendiente</option>
+            <option value="visita_vencida">Con visita vencida</option>
+            <option value="multiparcelas">Con múltiples parcelas</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label for="productor_id">ID de productor</label>
+          <input id="productor_id" name="productor_id" type="search" autocomplete="off" placeholder="PR-…">
+        </div>
+        <div class="campo">
+          <label for="nombre">Nombre</label>
+          <input id="nombre" name="nombre" type="search" autocomplete="off">
+        </div>
+        <div class="campo">
+          <label for="parcela_id">Parcela</label>
+          <input id="parcela_id" name="parcela_id" type="search" autocomplete="off" placeholder="Parcela o ID">
+        </div>
+        <div class="campo">
+          <label for="folio">Folio de caso</label>
+          <input id="folio" name="folio" type="search" autocomplete="off">
+        </div>
+        <div class="campo">
+          <label for="cultivo">Cultivo</label>
+          <input id="cultivo" name="cultivo" type="search" autocomplete="off" placeholder="Maíz, frijol…">
+        </div>
+        <div class="campo">
+          <label for="municipio">Municipio o zona</label>
+          <input id="municipio" name="municipio" type="search" autocomplete="off">
+        </div>
+        <div class="campo">
+          <label for="desde">Desde</label>
+          <input id="desde" name="desde" type="date">
+        </div>
+        <div class="campo">
+          <label for="hasta">Hasta</label>
+          <input id="hasta" name="hasta" type="date">
+        </div>
+      </form>
+
+      <div class="acciones">
+        <button class="btn btn--fantasma" type="button" id="btnLimpiar">Limpiar filtros</button>
+        <button class="btn btn--cian" type="button" id="btnExportar">Exportar resultado filtrado</button>
+        <button class="btn btn--fantasma" type="button" id="btnTodasColumnas">Mostrar todas las columnas</button>
+        <button class="btn btn--fantasma" type="button" id="btnCompacta">Vista compacta</button>
+        <button class="btn btn--fantasma" type="button" id="btnDetallada">Vista detallada</button>
+      </div>
+
+      <details>
+        <summary class="ayuda" style="cursor:pointer">Columnas visibles</summary>
+        <div class="columnas" id="columnas"></div>
+      </details>
+    </section>
+
+    <p class="ayuda" id="resumenLista" aria-live="polite" style="margin:16px 0 8px">Cargando productores…</p>
+
+    <div class="tabla-envoltura">
+      <table class="tabla-datos" id="tablaProductores">
+        <thead><tr id="cabeceraTabla"></tr></thead>
+        <tbody id="cuerpoTabla"></tbody>
+      </table>
+    </div>
+
+    <nav class="paginacion" aria-label="Paginación">
+      <button class="btn btn--fantasma" type="button" id="btnAnterior">← Anterior</button>
+      <span class="paginacion__info" id="infoPagina">—</span>
+      <button class="btn btn--fantasma" type="button" id="btnSiguiente">Siguiente →</button>
+      <label class="ayuda" for="limite">Por página</label>
+      <select id="limite" style="width:auto">
+        <option value="10">10</option>
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+    </nav>
+
+    <p class="aviso aviso--mal" id="error" role="alert" hidden></p>
+  </main>
+
+  <div class="fondo-expediente" id="fondoExpediente" hidden></div>
+  <aside class="expediente" id="expediente" hidden aria-labelledby="expedienteTitulo" role="dialog" aria-modal="true">
+    <div class="expediente__cab">
+      <div>
+        <span class="eyebrow">Expediente</span>
+        <h2 id="expedienteTitulo">—</h2>
+        <p class="ayuda" id="expedienteSub" style="margin:4px 0 0">—</p>
+      </div>
+      <button class="btn btn--fantasma" type="button" id="btnCerrarExpediente">Cerrar</button>
+    </div>
+    <div id="expedienteCuerpo"></div>
+  </aside>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="/productores.js"></script>
+</body>
+</html>

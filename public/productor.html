@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mi Campo · Alerta Plaga</title>
+  <link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+  <a class="saltar" href="#principal">Saltar al contenido</a>
+
+  <header class="barra">
+    <div class="contenedor barra__in">
+      <a class="marca" href="/">
+        <span class="marca__icono" aria-hidden="true">🌱</span>
+        <span>
+          <span class="marca__titulo">Mi Campo</span>
+          <span class="marca__sub">Alerta Plaga · Los Artilleros</span>
+        </span>
+      </a>
+      <div class="barra__nav sesion">
+        <span class="avatar" id="avatar" aria-hidden="true">·</span>
+        <span>
+          <span id="nombre" style="font-weight:600">—</span><br>
+          <span class="ayuda" id="idParcial">—</span>
+        </span>
+        <button class="btn btn--fantasma" type="button" id="btnSalir">Cerrar sesión</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="principal" class="mi-campo">
+    <div class="mi-campo__grid">
+
+      <div class="parcela-movil">
+        <label for="parcelaMovil">Parcela activa</label>
+        <select id="parcelaMovil"></select>
+      </div>
+
+      <aside class="col-parcelas tarjeta" aria-labelledby="tituloParcelas">
+        <div class="col-cab">
+          <h1 id="tituloParcelas">Mis parcelas</h1>
+          <span class="chip chip--neutro" id="contadorParcelas" aria-live="polite">0</span>
+        </div>
+        <p class="ayuda" id="sinParcelas" hidden>No tienes parcelas registradas. Contacta al equipo técnico para que registren tu parcela.</p>
+        <div class="parcelas-lista" id="parcelas"></div>
+      </aside>
+
+      <section class="col-mapa" aria-labelledby="tituloMapa">
+        <div class="mapa-cab">
+          <div>
+            <h2 id="tituloMapa">Mapa de mis parcelas</h2>
+            <p class="ayuda" id="mapaSub">Tus parcelas, sus casos, visitas y alertas cercanas anónimas.</p>
+          </div>
+          <div class="mapa-acciones" role="group" aria-label="Controles del mapa">
+            <button class="btn btn--fantasma" type="button" id="btnCentrar">Centrar parcela</button>
+            <button class="btn btn--fantasma" type="button" id="btnTodas">Mostrar todas mis parcelas</button>
+            <label class="interruptor"><input type="checkbox" id="capasAlertas" checked> Alertas cercanas</label>
+            <button class="btn btn--fantasma solo-movil" type="button" id="btnContraerMapa" aria-expanded="true" aria-controls="mapaCaja">Contraer mapa</button>
+          </div>
+        </div>
+
+        <div class="mapa-caja" id="mapaCaja">
+          <svg id="mapa" class="mapa-svg" role="img" aria-label="Mapa de tus parcelas y casos"></svg>
+          <div class="mapa-vacio" id="mapaVacio" hidden>
+            <p>Sin parcelas registradas.</p>
+            <p class="ayuda">Cuando el equipo técnico registre tu parcela, aparecerá aquí.</p>
+          </div>
+          <div class="mapa-zoom" role="group" aria-label="Zoom del mapa">
+            <button type="button" id="zoomMas" aria-label="Acercar mapa">+</button>
+            <button type="button" id="zoomMenos" aria-label="Alejar mapa">−</button>
+          </div>
+          <div class="mapa-atribucion" data-atribucion-mapa>© OpenStreetMap contributors</div>
+          <ul class="mapa-leyenda" aria-label="Leyenda del mapa">
+            <li><span class="punto-leyenda punto--parcela" aria-hidden="true"></span>Parcela</li>
+            <li><span class="punto-leyenda punto--activa" aria-hidden="true"></span>Parcela activa</li>
+            <li><span class="punto-leyenda punto--rojo" aria-hidden="true"></span>Caso urgente</li>
+            <li><span class="punto-leyenda punto--naranja" aria-hidden="true"></span>Caso alto</li>
+            <li><span class="punto-leyenda punto--amarillo" aria-hidden="true"></span>Caso medio</li>
+            <li><span class="punto-leyenda punto--verde" aria-hidden="true"></span>Caso bajo</li>
+            <li><span class="punto-leyenda punto--visita" aria-hidden="true"></span>Visita</li>
+            <li data-leyenda="alertas"><span class="punto-leyenda punto--alerta" aria-hidden="true"></span>Alerta cercana</li>
+            <li><span class="punto-leyenda punto--radio" aria-hidden="true"></span>Radio 5 km</li>
+          </ul>
+        </div>
+      </section>
+
+      <aside class="col-panel tarjeta" aria-label="Panel de Mi Campo">
+        <div class="panel-tabs" role="tablist" aria-label="Secciones de Mi Campo">
+          <button role="tab" type="button" id="tab-reportar" aria-controls="panel-reportar" aria-selected="true" tabindex="0">Reportar al asistente</button>
+          <button role="tab" type="button" id="tab-casos" aria-controls="panel-casos" aria-selected="false" tabindex="-1">Mis casos <span class="tab__num" id="numCasos">0</span></button>
+          <button role="tab" type="button" id="tab-avisos" aria-controls="panel-avisos" aria-selected="false" tabindex="-1">Avisos y visitas</button>
+        </div>
+
+        <section role="tabpanel" id="panel-reportar" aria-labelledby="tab-reportar" tabindex="0">
+          <p class="parcela-activa"><span class="eyebrow">Parcela activa</span><br><strong id="parcelaActivaNombre">—</strong></p>
+
+          <form id="formReporte" novalidate>
+            <div class="campo">
+              <label for="texto">¿Qué observas?</label>
+              <textarea id="texto" maxlength="2000" placeholder="Ej.: las hojas del maíz tienen manchas y hay gusanos en el cogollo"></textarea>
+            </div>
+
+            <div class="campo">
+              <label for="foto">Fotografía (opcional)</label>
+              <input id="foto" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="ayudaFoto">
+              <span class="ayuda" id="ayudaFoto">JPG, PNG o WEBP · máximo 5 MB. La imagen no se guarda.</span>
+            </div>
+            <div class="vista-previa" id="vistaPreviaCaja" hidden>
+              <img id="vistaPrevia" alt="Vista previa de la fotografía seleccionada">
+              <button class="btn btn--fantasma" type="button" id="btnQuitarFoto">Quitar foto</button>
+            </div>
+
+            <div class="campo">
+              <label for="porcentaje">Porcentaje afectado (tu declaración)</label>
+              <input id="porcentaje" type="number" min="0" max="100" step="1" inputmode="numeric" placeholder="Ej.: 25">
+              <div class="pct-rapidos" role="group" aria-label="Porcentajes rápidos">
+                <button class="btn btn--fantasma" type="button" data-pct="10">10 %</button>
+                <button class="btn btn--fantasma" type="button" data-pct="25">25 %</button>
+                <button class="btn btn--fantasma" type="button" data-pct="50">50 %</button>
+                <button class="btn btn--fantasma" type="button" data-pct="100">100 %</button>
+              </div>
+              <span class="ayuda" id="hectareas">Hectáreas estimadas: —</span>
+            </div>
+
+            <button class="btn btn--verde" type="submit" id="btnEnviar">Enviar reporte</button>
+          </form>
+
+          <p class="ayuda" id="estadoAnalisis" role="status" aria-live="polite"></p>
+          <div class="aviso aviso--info" id="resultado" hidden aria-live="polite"></div>
+          <p class="aviso aviso--mal" id="error" role="alert" hidden></p>
+        </section>
+
+        <section role="tabpanel" id="panel-casos" aria-labelledby="tab-casos" tabindex="0" hidden>
+          <label class="interruptor"><input type="checkbox" id="casosTodas"> Mostrar casos de todas mis parcelas</label>
+          <div class="detalle-caso" id="detalleCaso" hidden aria-live="polite"></div>
+          <div class="lista" id="casos"></div>
+        </section>
+
+        <section role="tabpanel" id="panel-avisos" aria-labelledby="tab-avisos" tabindex="0" hidden>
+          <label class="interruptor"><input type="checkbox" id="avisosTodas"> Mostrar todas mis parcelas</label>
+          <h3>Avisos</h3>
+          <div class="lista" id="avisos"></div>
+          <h3>Visitas</h3>
+          <div class="lista" id="visitas"></div>
+        </section>
+      </aside>
+
+    </div>
+  </main>
+
+  <script src="/mapa-teselas.js"></script>
+  <script src="/productor-mapa.js"></script>
+  <script src="/productor.js"></script>
+</body>
+</html>

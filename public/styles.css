@@ -398,6 +398,21 @@ button { font: inherit; }
 }
 #mapa.arrastrando { cursor: grabbing; }
 
+.mapa__atribucion {
+  position: absolute;
+  right: 12px;
+  bottom: 44px;
+  z-index: 5;
+  max-width: calc(100% - 24px);
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: rgba(13, 21, 32, .85);
+  border: 1px solid var(--linea);
+  color: var(--apagado);
+  font-size: 10.5px;
+  pointer-events: none;
+}
+
 .mapa__zoom {
   position: absolute;
   right: 12px;

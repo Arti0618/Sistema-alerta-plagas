@@ -49,7 +49,9 @@ const config = {
 
   // Secretos
   telegramToken: (process.env.TELEGRAM_BOT_TOKEN || '').trim(),
-  equipoToken: (process.env.EQUIPO_TOKEN || '').trim(),
+  // El servidor usa EQUIPO_TOKEN; algunas copias locales antiguas usan
+  // TOKEN_EQUIPO. Se aceptan ambos nombres para no romper el arranque local.
+  equipoToken: (process.env.EQUIPO_TOKEN || process.env.TOKEN_EQUIPO || '').trim(),
   geminiKey: (process.env.GEMINI_API_KEY || '').trim(),
 
   // Almacenamiento: Supabase es quien guarda todo (consultas, estado,
@@ -88,8 +90,7 @@ const config = {
   requiereAprobacion: bandera('APROBAR_ANTES_DE_AVISAR', true),
 
   // Análisis visual de fotografías de Telegram (preliminar, nunca confirmatorio).
-  visionHabilitado: bandera('VISION_ENABLED', true),
-  visionMaxBytes: Number(si('VISION_MAX_BYTES', 5 * 1024 * 1024)),
+  visionHabilitado: bandera('VISION_ENABLED', true),  visionMaxBytes: Number(si('VISION_MAX_BYTES', 5 * 1024 * 1024)),
   visionTimeoutMs: Number(si('VISION_TIMEOUT_MS', 15000)),
   visionMaxPorChat: Number(si('VISION_MAX_POR_CHAT', 5)),
   // Espera máxima que se respeta ante un 429 temporal (nunca bloquea el bucle).
@@ -101,6 +102,28 @@ const config = {
   openrouterModel: si('OPENROUTER_VISION_MODEL', 'google/gemini-3.1-flash-lite'),
   openrouterAlternos: si('OPENROUTER_VISION_MODELOS_ALTERNOS', ''),
   openrouterTimeoutMs: Number(si('OPENROUTER_TIMEOUT_MS', 30000)),
+
+  // Portales web (productor / coordinación). Sin valores por defecto: si falta
+  // una contraseña, ese acceso queda deshabilitado (nunca se inventa una).
+  portalProductorPassword: String(process.env.PORTAL_PRODUCTOR_PASSWORD || ''),
+  portalCoordinadorPassword: String(process.env.PORTAL_COORDINADOR_PASSWORD || ''),
+  portalEnviarCasoOficial: bandera('PORTAL_WEB_ENVIAR_CASO_OFICIAL', false),
+
+  // Teselas del mapa base (compartidas por Mi Campo y el Panel).
+  // El proveedor principal usa la URL oficial de OpenStreetMap; el respaldo
+  // solo se activa una vez si el principal falla.
+  mapTileProvider: si('MAP_TILE_PROVIDER', 'openstreetmap'),
+  mapTileUrl: si('MAP_TILE_URL', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+  mapTileAttribution: si('MAP_TILE_ATTRIBUTION', '© OpenStreetMap contributors'),
+  mapTileFallbackUrl: si(
+    'MAP_TILE_FALLBACK_URL',
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+  ),
+  mapTileFallbackAttribution: si(
+    'MAP_TILE_FALLBACK_ATTRIBUTION',
+    'Esri, HERE, Garmin, © OpenStreetMap contributors',
+  ),
+  mapTileMaxZoom: Number(si('MAP_TILE_MAX_ZOOM', 19)),
 
   // Rutas
   dataDir: path.join(ROOT, 'data'),
@@ -150,5 +173,38 @@ config.openrouterModelos = [
       .filter(Boolean),
   ),
 ];
+
+/**
+ * Hosts exactos de teselas para la CSP. Nunca se usan comodines: solo los
+ * dominios realmente configurados (principal y respaldo).
+ */
+function hostTesela(plantilla) {
+  try {
+    const limpia = String(plantilla || '').replace(/\{[^}]+\}/g, '0');
+    const u = new URL(limpia);
+    return u.protocol === 'https:' ? u.hostname : '';
+  } catch {
+    return '';
+  }
+}
+config.teselaHosts = [
+  ...new Set(
+    [config.mapTileUrl, config.mapTileFallbackUrl]
+      .map(hostTesela)
+      .filter(Boolean),
+  ),
+];
+const imgTeselas = config.teselaHosts.map((h) => `https://${h}`).join(' ');
+config.referrerPolicy = 'strict-origin-when-cross-origin';
+config.csp = [
+  "default-src 'self'",
+  `img-src 'self' data: blob:${imgTeselas ? ` ${imgTeselas}` : ''}`,
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self'",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
 
 module.exports = config;

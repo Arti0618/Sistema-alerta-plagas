@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alerta Plaga · Vigilancia fitosanitaria</title>
+  <link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+  <a class="saltar" href="#principal">Saltar al contenido</a>
+
+  <header class="barra">
+    <div class="contenedor barra__in">
+      <a class="marca" href="/">
+        <span class="marca__icono" aria-hidden="true">🌿</span>
+        <span>
+          <span class="marca__titulo">Alerta Plaga</span>
+          <span class="marca__sub">Vigilancia fitosanitaria · Los Artilleros</span>
+        </span>
+      </a>
+      <nav class="barra__nav" aria-label="Accesos">
+        <a class="enlace" href="/acceso-productor">Mi Campo</a>
+        <a class="enlace" href="/acceso-coordinacion">Panel de Coordinación</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="principal" class="contenedor">
+    <section class="hero">
+      <span class="hero__estado"><span class="punto" id="estadoPunto"></span><span id="estadoTexto">Comprobando estado del sistema…</span></span>
+      <h1>Dos puertas, un mismo cuidado del campo.</h1>
+      <p>
+        Alerta Plaga conecta a productores y equipos técnicos para detectar a tiempo
+        plagas, brotes y seguimientos. Reporta desde el campo, revisa el estado de tus
+        casos y coordina la atención con evidencia clara.
+      </p>
+    </section>
+
+    <section class="portales" aria-label="Accesos">
+      <a class="portal" href="/acceso-productor">
+        <span class="portal__icono" aria-hidden="true">🌱</span>
+        <span class="eyebrow">Acceso de productores</span>
+        <h2>Mi Campo</h2>
+        <p>Consulta tus parcelas, reporta daños mediante texto, fotografía o voz, y revisa la atención de tus casos.</p>
+        <span class="portal__cta">Ingresar a Mi Campo →</span>
+      </a>
+      <a class="portal portal--cian" href="/acceso-coordinacion">
+        <span class="portal__icono" aria-hidden="true">🛰️</span>
+        <span class="eyebrow">Acceso de coordinación</span>
+        <h2>Panel de Coordinación</h2>
+        <p>Supervisa productores, parcelas, casos, brotes, técnicos, plazos, aprobaciones, avisos y conversaciones de Telegram.</p>
+        <span class="portal__cta">Ingresar al Panel →</span>
+      </a>
+    </section>
+
+    <h2 class="eyebrow" style="margin-bottom:10px">Estado del sistema</h2>
+    <section class="kpis" id="kpis" aria-live="polite">
+      <div class="kpi"><div class="kpi__k">Casos atendidos</div><div class="kpi__v" id="kCasos">—</div></div>
+      <div class="kpi"><div class="kpi__k">Productores</div><div class="kpi__v" id="kProductores">—</div></div>
+      <div class="kpi"><div class="kpi__k">Parcelas</div><div class="kpi__v" id="kParcelas">—</div></div>
+      <div class="kpi"><div class="kpi__k">Técnicos</div><div class="kpi__v" id="kTecnicos">—</div></div>
+    </section>
+  </main>
+
+  <script src="/portada.js"></script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acceso de productores · Mi Campo</title>
+  <link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+  <a class="saltar" href="#principal">Saltar al contenido</a>
+  <header class="barra">
+    <div class="contenedor barra__in">
+      <a class="marca" href="/">
+        <span class="marca__icono" aria-hidden="true">🌿</span>
+        <span>
+          <span class="marca__titulo">Mi Campo</span>
+          <span class="marca__sub">Alerta Plaga · Los Artilleros</span>
+        </span>
+      </a>
+      <nav class="barra__nav" aria-label="Navegación">
+        <a class="enlace" href="/">Portada</a>
+        <a class="enlace" href="/acceso-coordinacion">Panel de Coordinación</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="principal" class="acceso">
+    <div class="acceso__caja tarjeta">
+      <h1 style="margin-top:0;font-size:22px">Entra a Mi Campo</h1>
+      <p class="ayuda">Escribe el ID de productor que te entregó el equipo técnico y la contraseña general de productores.</p>
+
+      <form id="formProductor" novalidate>
+        <div class="campo">
+          <label for="productor">ID de productor</label>
+          <input id="productor" name="productor_id" type="text" autocomplete="username"
+                 autocapitalize="characters" spellcheck="false" required
+                 aria-describedby="ayudaProductor" placeholder="Ej.: PR-000">
+          <span class="ayuda" id="ayudaProductor">Solo verás tus parcelas, tus casos, tus visitas y tus avisos.</span>
+        </div>
+        <div class="campo">
+          <label for="password">Contraseña</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="btn btn--verde" type="submit" id="btnEntrar">Ingresar a Mi Campo</button>
+      </form>
+
+      <p class="aviso aviso--mal" id="error" role="alert" hidden></p>
+    </div>
+  </main>
+
+  <script src="/acceso-productor.js"></script>
+</body>
+</html>

@@ -27,6 +27,9 @@
       <span class="pill" id="estadoBot">Conectando…</span>
       <button class="btn" id="btnRevisar" title="Buscar reportes nuevos ahora">Revisar ahora</button>
       <button class="btn btn--ghost" id="btnDiag" title="Comprobar conexiones">Diagnóstico</button>
+      <a class="btn btn--ghost" href="/coordinacion/productores">Productores</a>
+      <a class="btn btn--ghost" href="/coordinacion/bitacora">Bitácora</a>
+      <button class="btn btn--ghost" id="btnSalirPortal" type="button">Cerrar sesión</button>
     </div>
   </header>
 
@@ -99,6 +102,7 @@
         </div>
         <div class="mapa__nivel" id="mapaNivel">100 %</div>
 
+        <div class="mapa__atribucion" data-atribucion-mapa>© OpenStreetMap contributors</div>
         <div class="mapa__leyenda">
           <div><span class="punto-semaforo s-rojo"></span> Rojo (24 h)</div>
           <div><span class="punto-semaforo s-naranja"></span> Naranja (48 h)</div>
@@ -197,6 +201,7 @@
 
   <div class="toast" id="toast" hidden></div>
 
+  <script src="/mapa-teselas.js"></script>
   <script src="/mapa-escala.js"></script>
   <script src="/app.js"></script>
 </body>

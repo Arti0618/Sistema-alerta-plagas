@@ -17,6 +17,7 @@ const telegram = require('./src/telegram');
 const gemini = require('./src/gemini');
 const procesador = require('./src/procesador');
 const { etiquetaPlaga, textoEsPlaga } = require('./src/etiquetas-panel');
+const portalRutas = require('./src/portal-rutas');
 
 /* ------------------------------------------------------------------ */
 /* Utilidades HTTP                                                     */
@@ -479,11 +480,31 @@ async function getDiagnostico(res) {
 /* Servidor                                                            */
 /* ------------------------------------------------------------------ */
 
+function cabecerasSeguridad(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  // Se envía solo el origen a hosts externos (nunca la ruta completa) y las
+  // teselas reciben un Referer válido, como exige su política de uso.
+  res.setHeader('Referrer-Policy', config.referrerPolicy);
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Content-Security-Policy', config.csp);
+}
+
 const servidor = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
 
   try {
+    cabecerasSeguridad(res);
+
+    if (await portalRutas.manejar(req, res, url)) return;
+    if (portalRutas.apiHeredadaProtegida(req, res, pathname)) return;
+
+    if (pathname === '/index.html') {
+      res.writeHead(302, { Location: '/coordinacion' });
+      return res.end();
+    }
+
     if (pathname === '/api/panel' && req.method === 'GET') return await getPanel(res, url);
     if (pathname === '/api/diagnostico' && req.method === 'GET') return await getDiagnostico(res);
     if (pathname === '/api/plagas' && req.method === 'GET') {
